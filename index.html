@@ -1,1 +1,241 @@
 
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#f5f5f5">
+  <title>Hingram — Kết nối và chia sẻ</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <div id="toast" class="toast" role="status"></div>
+
+  <!-- AUTH -->
+  <main id="auth-screen" class="auth-screen">
+    <section class="auth-brand">
+      <div class="brand-mark">H</div>
+      <h1>Hingram</h1>
+      <p>Kết nối và chia sẻ theo cách của bạn.</p>
+    </section>
+
+    <section class="auth-card">
+      <form id="login-form" class="auth-form">
+        <h2>Đăng nhập</h2>
+        <p class="muted">Tiếp tục đến với Hingram.</p>
+        <label for="login-email">Email</label>
+        <input id="login-email" type="email" autocomplete="email" required>
+        <label for="login-password">Mật khẩu</label>
+        <input id="login-password" type="password" autocomplete="current-password" required>
+        <button class="btn primary full" type="submit">Đăng nhập</button>
+        <p class="auth-switch">Bạn chưa có tài khoản?
+          <button type="button" class="text-button" data-show-auth="signup">Đăng ký</button>
+        </p>
+      </form>
+
+      <form id="signup-form" class="auth-form hidden">
+        <h2>Tạo tài khoản</h2>
+        <p class="muted">Bắt đầu hành trình của bạn trên Hingram.</p>
+        <div id="signup-step-1">
+          <label for="signup-name">Tên hiển thị</label>
+          <input id="signup-name" maxlength="60" autocomplete="name" required>
+          <label for="signup-email">Email</label>
+          <input id="signup-email" type="email" autocomplete="email" required>
+          <button class="btn primary full" type="button" id="send-otp-btn">Gửi mã xác minh</button>
+        </div>
+        <div id="signup-step-2" class="hidden">
+          <p class="muted">Nhập mã xác minh đã gửi đến email của bạn.</p>
+          <label for="signup-otp">Mã xác minh 8 chữ số</label>
+          <input id="signup-otp" inputmode="numeric" autocomplete="one-time-code"
+                 maxlength="8" pattern="[0-9]{8}" placeholder="00000000" required>
+          <button class="btn primary full" type="button" id="verify-otp-btn">Xác minh email</button>
+          <button class="btn secondary full" type="button" id="resend-otp-btn">Gửi lại mã</button>
+        </div>
+        <div id="signup-step-3" class="hidden">
+          <p class="muted">Email đã được xác minh. Hãy tạo mật khẩu.</p>
+          <label for="signup-password">Mật khẩu</label>
+          <input id="signup-password" type="password" minlength="8"
+                 autocomplete="new-password" required>
+          <label for="signup-confirm">Nhập lại mật khẩu</label>
+          <input id="signup-confirm" type="password" minlength="8"
+                 autocomplete="new-password" required>
+          <button class="btn primary full" type="submit">Hoàn tất đăng ký</button>
+        </div>
+        <p class="auth-switch">Bạn đã có tài khoản?
+          <button type="button" class="text-button" data-show-auth="login">Đăng nhập</button>
+        </p>
+      </form>
+    </section>
+    <p class="auth-footer">Hingram · Không gian chia sẻ của bạn</p>
+  </main>
+
+  <!-- APP -->
+  <div id="app-screen" class="app-screen hidden">
+    <header class="topbar">
+      <button class="brand-inline" id="home-btn" aria-label="Về trang chủ">
+        <span class="brand-mark small">H</span><span>Hingram</span>
+      </button>
+      <div class="topbar-actions">
+        <button class="icon-button" id="new-post-btn" title="Tạo bài viết" aria-label="Tạo bài viết">＋</button>
+        <button class="profile-shortcut" id="profile-btn" title="Hồ sơ cá nhân">
+          <img id="top-avatar" alt="" class="avatar tiny">
+          <span id="top-name">Tài khoản</span>
+        </button>
+      </div>
+    </header>
+
+    <div class="layout">
+      <aside class="sidebar">
+        <button class="nav-item active" id="nav-home">⌂ <span>Trang chủ</span></button>
+        <button class="nav-item" id="nav-profile">◉ <span>Hồ sơ cá nhân</span></button>
+        <div class="sidebar-note">
+          <strong>Hingram</strong>
+          <p>Một nơi để chia sẻ những điều bạn muốn.</p>
+        </div>
+      </aside>
+
+      <main class="main-column">
+        <section id="feed-view">
+          <div class="section-heading">
+            <div><h1>Bảng tin</h1><p class="muted">Những bài viết mới nhất</p></div>
+            <button class="btn secondary" id="refresh-feed">Làm mới</button>
+          </div>
+          <button class="composer-launch" id="composer-launch">
+            <img id="composer-avatar" class="avatar" alt="">
+            <span>Bạn đang nghĩ gì?</span>
+            <span class="composer-plus">＋</span>
+          </button>
+          <div id="feed-list" class="feed-list">
+            <div class="loading">Đang tải bài viết...</div>
+          </div>
+          <button id="load-more-btn" class="btn secondary full hidden">Tải thêm bài viết</button>
+        </section>
+
+        <section id="profile-view" class="hidden">
+          <div class="section-heading">
+            <div><h1>Hồ sơ cá nhân</h1><p class="muted">Thông tin và bài viết của bạn</p></div>
+            <button class="btn secondary" id="edit-profile-btn">Chỉnh sửa</button>
+          </div>
+          <div id="profile-panel" class="profile-panel"></div>
+          <h2 class="subheading">Bài viết</h2>
+          <div id="profile-posts" class="feed-list"></div>
+        </section>
+      </main>
+
+      <aside class="rightbar">
+        <div class="simple-card">
+          <h3>Về Hingram</h3>
+          <p>Mạng xã hội nhỏ để kết nối và chia sẻ.</p>
+          <p class="muted small-text">Hãy tôn trọng quyền riêng tư và nội dung của nhau.</p>
+        </div>
+      </aside>
+    </div>
+  </div>
+
+  <!-- POST EDITOR -->
+  <div id="post-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="post-modal-title">
+    <div class="modal-card editor-card">
+      <div class="modal-header">
+        <button class="icon-button" data-close="post-modal" aria-label="Đóng">×</button>
+        <h2 id="post-modal-title">Tạo bài viết</h2>
+        <button class="btn primary" id="publish-post-btn">Đăng</button>
+      </div>
+      <div class="editor-author">
+        <img id="editor-avatar" class="avatar" alt="">
+        <div><strong id="editor-name">Tài khoản</strong><p class="muted small-text">Bài viết hiển thị trên Hingram</p></div>
+      </div>
+      <div class="format-toolbar">
+        <button type="button" data-format="bold"><b>B</b></button>
+        <button type="button" data-format="italic"><i>I</i></button>
+        <button type="button" data-format="underline"><u>U</u></button>
+      </div>
+      <div id="post-content" class="post-input" contenteditable="true"
+           data-placeholder="Bạn đang nghĩ gì?" role="textbox" aria-multiline="true"></div>
+      <div id="image-preview" class="image-preview"></div>
+      <div class="editor-options">
+        <label class="upload-label">＋ Thêm ảnh
+          <input id="post-images" type="file" accept="image/jpeg,image/png,image/webp,image/gif" multiple hidden>
+        </label>
+        <label class="checkbox-label"><input id="comments-enabled" type="checkbox" checked> Cho phép bình luận</label>
+      </div>
+    </div>
+  </div>
+
+  <!-- PROFILE EDITOR -->
+  <div id="profile-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="profile-modal-title">
+    <div class="modal-card">
+      <div class="modal-header">
+        <button class="icon-button" data-close="profile-modal" aria-label="Đóng">×</button>
+        <h2 id="profile-modal-title">Chỉnh sửa hồ sơ</h2>
+        <button class="btn primary" id="save-profile-btn">Lưu</button>
+      </div>
+      <div class="profile-edit-avatar">
+        <img id="edit-avatar-preview" class="avatar huge" alt="">
+        <label class="upload-label">Đổi ảnh đại diện
+          <input id="avatar-file" type="file" accept="image/jpeg,image/png,image/webp" hidden>
+        </label>
+      </div>
+      <label for="edit-display-name">Tên hiển thị</label>
+      <input id="edit-display-name" maxlength="60" required>
+      <label for="edit-bio">Tiểu sử</label>
+      <textarea id="edit-bio" maxlength="300" rows="3" placeholder="Giới thiệu đôi điều về bạn"></textarea>
+      <label for="edit-theme">Giao diện</label>
+      <select id="edit-theme">
+        <option value="system">Theo hệ thống</option>
+        <option value="light">Sáng</option>
+        <option value="dark">Tối</option>
+      </select>
+      <h3 class="subheading">Liên kết mạng xã hội</h3>
+      <div id="social-links-editor" class="social-editor"></div>
+    </div>
+  </div>
+
+  <!-- POST ACTION MENU -->
+  <div id="edit-post-modal" class="modal hidden" role="dialog" aria-modal="true">
+    <div class="modal-card">
+      <div class="modal-header">
+        <button class="icon-button" data-close="edit-post-modal" aria-label="Đóng">×</button>
+        <h2>Chỉnh sửa bài viết</h2>
+        <button class="btn primary" id="save-post-btn">Lưu</button>
+      </div>
+      <div id="edit-post-content" class="post-input" contenteditable="true" data-placeholder="Nội dung bài viết"></div>
+      <label class="checkbox-label"><input id="edit-comments-enabled" type="checkbox"> Cho phép bình luận</label>
+    </div>
+  </div>
+
+  <!-- COMMENTS -->
+  <div id="comments-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="comments-title">
+    <div class="modal-card comments-card">
+      <div class="modal-header">
+        <button class="icon-button" data-close="comments-modal" aria-label="Đóng">×</button>
+        <h2 id="comments-title">Bình luận</h2>
+      </div>
+      <div id="comments-list" class="comments-list"></div>
+      <form id="comment-form" class="comment-form">
+        <img id="comment-avatar" class="avatar" alt="">
+        <input id="comment-input" maxlength="3000" placeholder="Viết bình luận..." required>
+        <button class="btn primary" type="submit">Gửi</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- SETTINGS -->
+  <div id="settings-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+    <div class="modal-card">
+      <div class="modal-header">
+        <button class="icon-button" data-close="settings-modal" aria-label="Đóng">×</button>
+        <h2 id="settings-title">Tài khoản và cài đặt</h2>
+      </div>
+      <div id="settings-profile" class="settings-profile"></div>
+      <button class="btn secondary full" id="settings-edit-profile">Chỉnh sửa hồ sơ</button>
+      <button class="btn secondary full" id="settings-theme-toggle">Đổi giao diện</button>
+      <button class="btn danger full" id="logout-btn">Đăng xuất</button>
+    </div>
+  </div>
+</body>
+</html>
+
