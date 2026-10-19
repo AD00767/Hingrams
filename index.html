@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="vi">
 <head>
@@ -81,9 +80,8 @@
       </button>
       <div class="topbar-actions">
         <button class="icon-button" id="new-post-btn" title="Tạo bài viết" aria-label="Tạo bài viết">＋</button>
-        <button class="profile-shortcut" id="profile-btn" title="Hồ sơ cá nhân">
+        <button class="profile-shortcut" id="profile-btn" title="Tài khoản">
           <img id="top-avatar" alt="" class="avatar tiny">
-          <span id="top-name">Tài khoản</span>
         </button>
       </div>
     </header>
@@ -92,16 +90,15 @@
       <aside class="sidebar">
         <button class="nav-item active" id="nav-home">⌂ <span>Trang chủ</span></button>
         <button class="nav-item" id="nav-profile">◉ <span>Hồ sơ cá nhân</span></button>
-        <div class="sidebar-note">
-          <strong>Hingram</strong>
-          <p>Một nơi để chia sẻ những điều bạn muốn.</p>
-        </div>
       </aside>
 
       <main class="main-column">
         <section id="feed-view">
           <div class="section-heading">
-            <div><h1>Bảng tin</h1><p class="muted">Những bài viết mới nhất</p></div>
+            <div>
+              <h1>Hingram</h1>
+              <p class="muted">Kết nối và chia sẻ theo cách của bạn</p>
+            </div>
             <button class="btn secondary" id="refresh-feed">Làm mới</button>
           </div>
           <button class="composer-launch" id="composer-launch">
@@ -116,24 +113,32 @@
         </section>
 
         <section id="profile-view" class="hidden">
-          <div class="section-heading">
-            <div><h1>Hồ sơ cá nhân</h1><p class="muted">Thông tin và bài viết của bạn</p></div>
-            <button class="btn secondary" id="edit-profile-btn">Chỉnh sửa</button>
-          </div>
-          <div id="profile-panel" class="profile-panel"></div>
+          <div id="profile-panel" class="profile-panel-wrapper"></div>
           <h2 class="subheading">Bài viết</h2>
           <div id="profile-posts" class="feed-list"></div>
         </section>
       </main>
 
-      <aside class="rightbar">
-        <div class="simple-card">
-          <h3>Về Hingram</h3>
-          <p>Mạng xã hội nhỏ để kết nối và chia sẻ.</p>
-          <p class="muted small-text">Hãy tôn trọng quyền riêng tư và nội dung của nhau.</p>
-        </div>
-      </aside>
+      <aside class="rightbar"></aside>
     </div>
+
+    <!-- FOOTER -->
+    <footer class="app-footer">
+      <div class="footer-content">
+        <div class="footer-brand">
+          <strong>Hingram</strong>
+          <p>Mạng xã hội giúp bạn kết nối và chia sẻ những khoảnh khắc đáng nhớ.</p>
+        </div>
+        <div class="footer-links">
+          <a href="#" id="link-privacy">Bảo mật</a>
+          <a href="#" id="link-terms">Điều khoản</a>
+          <a href="#" id="link-contact">Liên hệ</a>
+        </div>
+        <div class="footer-copyright">
+          &copy; Hingram. Bản quyền đã được bảo lưu.
+        </div>
+      </div>
+    </footer>
   </div>
 
   <!-- POST EDITOR -->
@@ -149,12 +154,15 @@
         <div><strong id="editor-name">Tài khoản</strong><p class="muted small-text">Bài viết hiển thị trên Hingram</p></div>
       </div>
       <div class="format-toolbar">
-        <button type="button" data-format="bold"><b>B</b></button>
-        <button type="button" data-format="italic"><i>I</i></button>
-        <button type="button" data-format="underline"><u>U</u></button>
+        <button type="button" data-md="# " title="Tiêu đề 1">H1</button>
+        <button type="button" data-md="## " title="Tiêu đề 2">H2</button>
+        <button type="button" data-md="### " title="Tiêu đề 3">H3</button>
+        <button type="button" data-md="**" title="In đậm"><b>B</b></button>
+        <button type="button" data-md="*" title="In nghiêng"><i>I</i></button>
+        <button type="button" data-md="> " title="Trích dẫn">”</button>
+        <button type="button" data-md="- " title="Danh sách">•</button>
       </div>
-      <div id="post-content" class="post-input" contenteditable="true"
-           data-placeholder="Bạn đang nghĩ gì?" role="textbox" aria-multiline="true"></div>
+      <textarea id="post-content" class="post-textarea" placeholder="Bạn đang nghĩ gì?"></textarea>
       <div id="image-preview" class="image-preview"></div>
       <div class="editor-options">
         <label class="upload-label">＋ Thêm ảnh
@@ -173,12 +181,24 @@
         <h2 id="profile-modal-title">Chỉnh sửa hồ sơ</h2>
         <button class="btn primary" id="save-profile-btn">Lưu</button>
       </div>
+      
+      <div class="profile-edit-cover-section">
+        <label>Ảnh bìa</label>
+        <div class="cover-preview-box">
+          <img id="edit-cover-preview" class="cover-img-preview" alt="">
+        </div>
+        <label class="upload-label">Đổi ảnh bìa
+          <input id="cover-file" type="file" accept="image/jpeg,image/png,image/webp" hidden>
+        </label>
+      </div>
+
       <div class="profile-edit-avatar">
         <img id="edit-avatar-preview" class="avatar huge" alt="">
         <label class="upload-label">Đổi ảnh đại diện
           <input id="avatar-file" type="file" accept="image/jpeg,image/png,image/webp" hidden>
         </label>
       </div>
+
       <label for="edit-display-name">Tên hiển thị</label>
       <input id="edit-display-name" maxlength="60" required>
       <label for="edit-bio">Tiểu sử</label>
@@ -189,30 +209,27 @@
         <option value="light">Sáng</option>
         <option value="dark">Tối</option>
       </select>
-      <h3 class="subheading">Liên kết mạng xã hội</h3>
-      <div id="social-links-editor" class="social-editor"></div>
-    </div>
-  </div>
 
-  <!-- POST ACTION MENU -->
-  <div id="edit-post-modal" class="modal hidden" role="dialog" aria-modal="true">
-    <div class="modal-card">
-      <div class="modal-header">
-        <button class="icon-button" data-close="edit-post-modal" aria-label="Đóng">×</button>
-        <h2>Chỉnh sửa bài viết</h2>
-        <button class="btn primary" id="save-post-btn">Lưu</button>
+      <div class="social-section-wrapper">
+        <button type="button" class="btn secondary full" id="toggle-social-editor-btn">Liên kết mạng xã hội</button>
+        <div id="social-links-container" class="social-links-container hidden">
+          <div id="social-links-list" class="social-editor"></div>
+          <button type="button" class="btn secondary" id="add-custom-social-btn" style="margin-top: 10px;">＋ Thêm liên kết khác</button>
+        </div>
       </div>
-      <div id="edit-post-content" class="post-input" contenteditable="true" data-placeholder="Nội dung bài viết"></div>
-      <label class="checkbox-label"><input id="edit-comments-enabled" type="checkbox"> Cho phép bình luận</label>
     </div>
   </div>
 
-  <!-- COMMENTS -->
+  <!-- COMMENTS MODAL -->
   <div id="comments-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="comments-title">
     <div class="modal-card comments-card">
       <div class="modal-header">
         <button class="icon-button" data-close="comments-modal" aria-label="Đóng">×</button>
         <h2 id="comments-title">Bình luận</h2>
+      </div>
+      <div id="reply-indicator" class="reply-indicator hidden">
+        <span id="reply-indicator-text">Đang trả lời...</span>
+        <button type="button" id="cancel-reply-btn">×</button>
       </div>
       <div id="comments-list" class="comments-list"></div>
       <form id="comment-form" class="comment-form">
@@ -223,7 +240,7 @@
     </div>
   </div>
 
-  <!-- SETTINGS -->
+  <!-- SETTINGS MODAL -->
   <div id="settings-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="settings-title">
     <div class="modal-card">
       <div class="modal-header">
@@ -236,6 +253,30 @@
       <button class="btn danger full" id="logout-btn">Đăng xuất</button>
     </div>
   </div>
+
+  <!-- CUSTOM CONFIRM DIALOG -->
+  <div id="confirm-modal" class="modal hidden" role="dialog" aria-modal="true">
+    <div class="modal-card dialog-card">
+      <h3 id="confirm-modal-title">Xác nhận</h3>
+      <p id="confirm-modal-message"></p>
+      <div class="dialog-actions">
+        <button class="btn secondary" id="confirm-modal-cancel">Hủy</button>
+        <button class="btn danger" id="confirm-modal-ok">Đồng ý</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- CUSTOM PROMPT DIALOG -->
+  <div id="prompt-modal" class="modal hidden" role="dialog" aria-modal="true">
+    <div class="modal-card dialog-card">
+      <h3 id="prompt-modal-title">Nhập thông tin</h3>
+      <p id="prompt-modal-message"></p>
+      <input id="prompt-modal-input" type="text">
+      <div class="dialog-actions">
+        <button class="btn secondary" id="prompt-modal-cancel">Hủy</button>
+        <button class="btn primary" id="prompt-modal-ok">Lưu</button>
+      </div>
+    </div>
+  </div>
 </body>
 </html>
-
