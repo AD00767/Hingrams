@@ -1,8 +1,5 @@
-
 /* =========================================================
    HINGRAM — FRONTEND
-   Yêu cầu: Supabase JS v2, các bảng đã tạo ở giai đoạn SQL.
-   Không đặt service_role key trong tệp này.
    ========================================================= */
 
 const SUPABASE_URL = "https://ipylukvdvttfvfftgpnm.supabase.co";
@@ -17,12 +14,15 @@ const $$ = (selector) => [...document.querySelectorAll(selector)];
 
 let currentUser = null;
 let currentProfile = null;
+let viewedProfileId = null;
 let feedOffset = 0;
 const PAGE_SIZE = 10;
 let currentCommentsPost = null;
+let replyToCommentId = null;
 let editingPostId = null;
 let selectedImages = [];
 let selectedAvatarFile = null;
+let selectedCoverFile = null;
 let signupEmail = "";
 let signupDisplayName = "";
 let verifiedSignupUser = false;
@@ -38,15 +38,8 @@ const REACTIONS = [
   { type: "angry", label: "Phẫn nộ", icon: "😡" }
 ];
 
-const SOCIAL_PLATFORMS = [
-  ["facebook", "Facebook"],
-  ["instagram", "Instagram"],
-  ["tiktok", "TikTok"],
-  ["youtube", "YouTube"],
-  ["x", "X"],
-  ["threads", "Threads"],
-  ["discord", "Discord"],
-  ["website", "Website"]
+const DEFAULT_PLATFORMS = [
+  "Facebook", "Instagram", "TikTok", "YouTube", "X", "Threads", "Discord", "Website"
 ];
 
 function escapeHTML(value = "") {
@@ -72,12 +65,62 @@ function avatarURL(profile) {
     );
 }
 
+function coverURL(profile) {
+  return safeURL(profile?.cover_url) || "";
+}
+
 function showToast(message, duration = 3500) {
   const toast = $("#toast");
   toast.textContent = message;
   toast.classList.add("show");
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => toast.classList.remove("show"), duration);
+}
+
+/* CUSTOM DIALOGS */
+function showConfirmDialog(title, message) {
+  return new Promise((resolve) => {
+    $("#confirm-modal-title").textContent = title;
+    $("#confirm-modal-message").textContent = message;
+    showModal("confirm-modal");
+
+    const onOk = () => { cleanup(); resolve(true); };
+    const onCancel = () => { cleanup(); resolve(false); };
+
+    function cleanup() {
+      hideModal("confirm-modal");
+      $("#confirm-modal-ok").removeEventListener("click", onOk);
+      $("#confirm-modal-cancel").removeEventListener("click", onCancel);
+    }
+
+    $("#confirm-modal-ok").addEventListener("click", onOk);
+    $("#confirm-modal-cancel").addEventListener("click", onCancel);
+  });
+}
+
+function showPromptDialog(title, message, defaultValue = "") {
+  return new Promise((resolve) => {
+    $("#prompt-modal-title").textContent = title;
+    $("#prompt-modal-message").textContent = message;
+    $("#prompt-modal-input").value = defaultValue;
+    showModal("prompt-modal");
+
+    const onOk = () => {
+      const val = $("#prompt-modal-input").value;
+      cleanup();
+      resolve(val);
+    };
+    const onCancel = () => { cleanup(); resolve(null); };
+
+    function cleanup() {
+      hideModal("prompt-modal");
+      $("#prompt-modal-ok").removeEventListener("click", onOk);
+      $("#prompt-modal-cancel").removeEventListener("click", onCancel);
+    }
+
+    $("#prompt-modal-ok").addEventListener("click", onOk);
+    $("#prompt-modal-cancel").addEventListener("click", onCancel);
+  });
 }
 
 function setBusy(button, busy, label = "Đang xử lý...") {
@@ -92,13 +135,8 @@ function setBusy(button, busy, label = "Đang xử lý...") {
   }
 }
 
-function showModal(id) {
-  $("#" + id)?.classList.remove("hidden");
-}
-
-function hideModal(id) {
-  $("#" + id)?.classList.add("hidden");
-}
+function showModal(id) { $("#" + id)?.classList.remove("hidden"); }
+function hideModal(id) { $("#" + id)?.classList.add("hidden"); }
 
 function switchAuth(view) {
   $("#login-form").classList.toggle("hidden", view !== "login");
@@ -106,9 +144,7 @@ function switchAuth(view) {
 }
 
 function showSignupStep(step) {
-  [1, 2, 3].forEach(number => {
-    $("#signup-step-" + number).classList.toggle("hidden", number !== step);
-  });
+  [1, 2, 3].forEach(n => $("#signup-step-" + n).classList.toggle("hidden", n !== step));
 }
 
 function applyTheme(theme) {
@@ -138,7 +174,6 @@ function setProfileImages() {
   $("#composer-avatar").src = src;
   $("#editor-avatar").src = src;
   $("#comment-avatar").src = src;
-  $("#top-name").textContent = currentProfile?.display_name || "Tài khoản";
   $("#editor-name").textContent = currentProfile?.display_name || "Tài khoản";
 }
 
@@ -155,238 +190,139 @@ function showAuth() {
 }
 
 async function getProfile(userId) {
-  const { data, error } = await db
-    .from("profiles")
-    .select("*")
-    .eq("id", userId)
-    .maybeSingle();
-
+  const { data, error } = await db.from("profiles").select("*").eq("id", userId).maybeSingle();
   if (error) throw error;
   return data;
 }
 
 async function ensureProfile() {
   if (!currentUser) return null;
-
-  // Trigger ở cơ sở dữ liệu là nguồn tạo hồ sơ chính.
-  // Thử đọc lại trong trường hợp trigger chưa hoàn tất ngay lập tức.
   for (let attempt = 0; attempt < 3; attempt++) {
     const profile = await getProfile(currentUser.id);
     if (profile) {
       currentProfile = profile;
       return profile;
     }
-    await new Promise(resolve => setTimeout(resolve, 500));
+    await new Promise(r => setTimeout(r, 500));
   }
-
-  throw new Error(
-    "Không tìm thấy hồ sơ tài khoản. Hãy kiểm tra trigger tạo profiles trong Supabase."
-  );
+  throw new Error("Không tìm thấy hồ sơ tài khoản.");
 }
 
 async function handleAuthState(session) {
   currentUser = session?.user || null;
-
   if (!currentUser) {
     currentProfile = null;
     showAuth();
     return;
   }
-
   try {
     await ensureProfile();
     showApp();
     await loadFeed(true);
   } catch (error) {
-    console.error(error);
     showToast(error.message || "Không thể tải hồ sơ.");
   }
 }
 
-/* ---------------- AUTH ---------------- */
-
-$("#login-form").addEventListener("submit", async (event) => {
-  event.preventDefault();
-
-  const button = event.submitter;
+/* AUTH HANDLERS */
+$("#login-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const button = e.submitter;
   setBusy(button, true, "Đang đăng nhập...");
-
   try {
     const email = $("#login-email").value.trim();
     const password = $("#login-password").value;
-
     const { data, error } = await db.auth.signInWithPassword({ email, password });
     if (error) throw error;
-
     currentUser = data.user;
     await ensureProfile();
     showApp();
     await loadFeed(true);
     showToast("Đăng nhập thành công.");
-  } catch (error) {
-    showToast(error.message || "Đăng nhập thất bại.");
+  } catch (err) {
+    showToast(err.message || "Đăng nhập thất bại.");
   } finally {
     setBusy(button, false);
   }
 });
 
-/*
-  Luồng đăng ký:
-  1. Nhập tên + email.
-  2. signInWithOtp gửi OTP qua email và có thể tạo tài khoản Auth.
-  3. verifyOtp xác minh mã.
-  4. updateUser đặt mật khẩu sau khi xác minh.
-  Yêu cầu mẫu email Supabase gửi đúng OTP dạng số và độ dài đã cấu hình.
-*/
 async function sendSignupOTP() {
   signupDisplayName = $("#signup-name").value.trim();
   signupEmail = $("#signup-email").value.trim().toLowerCase();
-
-  if (signupDisplayName.length < 2) {
-    showToast("Tên hiển thị cần có ít nhất 2 ký tự.");
-    return;
-  }
-  if (!signupEmail || !$("#signup-email").checkValidity()) {
-    showToast("Hãy nhập địa chỉ email hợp lệ.");
-    return;
-  }
+  if (signupDisplayName.length < 2) return showToast("Tên hiển thị cần ít nhất 2 ký tự.");
+  if (!signupEmail || !$("#signup-email").checkValidity()) return showToast("Email không hợp lệ.");
 
   const button = $("#send-otp-btn");
   setBusy(button, true, "Đang gửi mã...");
-
   try {
     const { error } = await db.auth.signInWithOtp({
       email: signupEmail,
-      options: {
-        shouldCreateUser: true,
-        data: { display_name: signupDisplayName }
-      }
+      options: { shouldCreateUser: true, data: { display_name: signupDisplayName } }
     });
     if (error) throw error;
-
     $("#signup-otp").value = "";
     showSignupStep(2);
-    showToast("Đã yêu cầu gửi mã. Hãy kiểm tra hộp thư và thư rác.");
-  } catch (error) {
-    showToast(error.message || "Không thể gửi mã xác minh.");
+    showToast("Đã gửi mã xác minh đến email.");
+  } catch (err) {
+    showToast(err.message || "Không thể gửi mã xác minh.");
   } finally {
     setBusy(button, false);
   }
 }
 
 $("#send-otp-btn").addEventListener("click", sendSignupOTP);
-
-$("#resend-otp-btn").addEventListener("click", async () => {
-  if (!signupEmail) {
-    showToast("Hãy nhập email trước.");
-    showSignupStep(1);
-    return;
-  }
-  $("#signup-email").value = signupEmail;
-  $("#signup-name").value = signupDisplayName;
-  await sendSignupOTP();
-});
+$("#resend-otp-btn").addEventListener("click", sendSignupOTP);
 
 $("#verify-otp-btn").addEventListener("click", async () => {
   const token = $("#signup-otp").value.trim();
-  if (!/^\d{8}$/.test(token)) {
-    showToast("Mã xác minh phải gồm đúng 8 chữ số.");
-    return;
-  }
+  if (!/^\d{8}$/.test(token)) return showToast("Mã xác minh phải có 8 chữ số.");
 
   const button = $("#verify-otp-btn");
   setBusy(button, true, "Đang xác minh...");
-
   try {
-    const { data, error } = await db.auth.verifyOtp({
-      email: signupEmail,
-      token,
-      type: "email"
-    });
+    const { data, error } = await db.auth.verifyOtp({ email: signupEmail, token, type: "email" });
     if (error) throw error;
-
     currentUser = data.user;
     verifiedSignupUser = true;
-
-    // Giữ tên hiển thị đã nhập ở bước đầu.
-    const { error: updateError } = await db.auth.updateUser({
-      data: { display_name: signupDisplayName }
-    });
-    if (updateError) throw updateError;
-
+    await db.auth.updateUser({ data: { display_name: signupDisplayName } });
     showSignupStep(3);
-    showToast("Email đã được xác minh. Hãy tạo mật khẩu.");
-  } catch (error) {
-    showToast(error.message || "Mã không hợp lệ hoặc đã hết hạn.");
+    showToast("Email đã được xác minh.");
+  } catch (err) {
+    showToast(err.message || "Mã không hợp lệ.");
   } finally {
     setBusy(button, false);
   }
 });
 
-$("#signup-form").addEventListener("submit", async (event) => {
-  event.preventDefault();
-
-  if (!verifiedSignupUser || !currentUser) {
-    showToast("Hãy xác minh email trước khi đặt mật khẩu.");
-    return;
-  }
-
+$("#signup-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  if (!verifiedSignupUser || !currentUser) return showToast("Hãy xác minh email trước.");
   const password = $("#signup-password").value;
-  const confirm = $("#signup-confirm").value;
+  if (password !== $("#signup-confirm").value) return showToast("Mật khẩu không trùng khớp.");
 
-  if (password.length < 8) {
-    showToast("Mật khẩu cần có ít nhất 8 ký tự.");
-    return;
-  }
-  if (password !== confirm) {
-    showToast("Hai mật khẩu không trùng khớp.");
-    return;
-  }
-
-  const button = event.submitter;
-  setBusy(button, true, "Đang tạo tài khoản...");
-
+  const button = e.submitter;
+  setBusy(button, true, "Đang hoàn tất...");
   try {
     const { error } = await db.auth.updateUser({ password });
     if (error) throw error;
-
-    // Chờ trigger tạo profile; cập nhật lại tên hiển thị nếu cần.
     await ensureProfile();
-
-    if (currentProfile && currentProfile.display_name !== signupDisplayName) {
-      const { error: profileError } = await db.from("profiles")
-        .update({ display_name: signupDisplayName })
-        .eq("id", currentUser.id);
-      if (profileError) throw profileError;
-      currentProfile.display_name = signupDisplayName;
-    }
-
-    verifiedSignupUser = false;
-    $("#signup-password").value = "";
-    $("#signup-confirm").value = "";
     showApp();
     await loadFeed(true);
-    showToast("Tài khoản Hingram đã được tạo.");
-  } catch (error) {
-    showToast(error.message || "Không thể hoàn tất đăng ký.");
+    showToast("Tài khoản đã được tạo.");
+  } catch (err) {
+    showToast(err.message);
   } finally {
     setBusy(button, false);
   }
 });
 
-$$("[data-show-auth]").forEach(button => {
-  button.addEventListener("click", () => {
-    switchAuth(button.dataset.showAuth);
-    if (button.dataset.showAuth === "signup") showSignupStep(1);
-  });
-});
+$$("[data-show-auth]").forEach(b => b.addEventListener("click", () => {
+  switchAuth(b.dataset.showAuth);
+  if (b.dataset.showAuth === "signup") showSignupStep(1);
+}));
 
 $("#logout-btn").addEventListener("click", async () => {
-  const { error } = await db.auth.signOut();
-  if (error) {
-    showToast(error.message);
-    return;
-  }
+  await db.auth.signOut();
   hideModal("settings-modal");
   currentUser = null;
   currentProfile = null;
@@ -394,20 +330,18 @@ $("#logout-btn").addEventListener("click", async () => {
   showToast("Đã đăng xuất.");
 });
 
-db.auth.onAuthStateChange((_event, session) => {
-  // Tránh gọi tác vụ Supabase đồng bộ ngay bên trong callback.
+db.auth.onAuthStateChange((_e, session) => {
   setTimeout(() => handleAuthState(session), 0);
 });
 
-/* ---------------- NAVIGATION ---------------- */
-
+/* NAVIGATION */
 function showView(view) {
   $("#feed-view").classList.toggle("hidden", view !== "feed");
   $("#profile-view").classList.toggle("hidden", view !== "profile");
   $("#nav-home").classList.toggle("active", view === "feed");
   $("#nav-profile").classList.toggle("active", view === "profile");
 
-  if (view === "profile") loadOwnProfileView();
+  if (view === "profile") viewUserProfile(currentUser.id);
 }
 
 $("#home-btn").addEventListener("click", () => showView("feed"));
@@ -421,53 +355,39 @@ $("#settings-edit-profile").addEventListener("click", () => {
   hideModal("settings-modal");
   openProfileEditor();
 });
-$("#edit-profile-btn").addEventListener("click", openProfileEditor);
-$("#settings-theme-toggle").addEventListener("click", async () => {
-  const current = currentProfile?.theme || "system";
-  const next = current === "light" ? "dark" : current === "dark" ? "system" : "light";
-  const { error } = await db.from("profiles")
-    .update({ theme: next }).eq("id", currentUser.id);
-  if (error) return showToast(error.message);
-  currentProfile.theme = next;
-  applyCurrentTheme();
-  showToast("Đã đổi giao diện.");
-});
 
-/* ---------------- FEED ---------------- */
+/* FOOTER LINKS */
+$("#link-privacy")?.addEventListener("click", (e) => { e.preventDefault(); showToast("Trang Bảo mật của Hingram."); });
+$("#link-terms")?.addEventListener("click", (e) => { e.preventDefault(); showToast("Trang Điều khoản sử dụng."); });
+$("#link-contact")?.addEventListener("click", (e) => { e.preventDefault(); showToast("Liên hệ: support@hingram.com"); });
 
+/* FEED & POSTS */
 async function loadFeed(reset = false) {
   if (!currentUser) return;
-
   if (reset) {
     feedOffset = 0;
     $("#feed-list").innerHTML = '<div class="loading">Đang tải bài viết...</div>';
   }
-
   const button = $("#load-more-btn");
   button.disabled = true;
 
   try {
-    const { data: posts, error } = await db
-      .from("posts")
-      .select("id,author_id,content,image_urls,comments_enabled,created_at,updated_at")
+    const { data: posts, error } = await db.from("posts")
+      .select("*")
       .order("created_at", { ascending: false })
       .range(feedOffset, feedOffset + PAGE_SIZE - 1);
-
     if (error) throw error;
 
     if (reset) $("#feed-list").innerHTML = "";
     if (!posts.length && feedOffset === 0) {
-      $("#feed-list").innerHTML = '<div class="empty-state">Chưa có bài viết nào. Hãy đăng bài đầu tiên.</div>';
+      $("#feed-list").innerHTML = '<div class="empty-state">Chưa có bài viết nào.</div>';
     } else {
       await renderPosts(posts, $("#feed-list"));
     }
-
     feedOffset += posts.length;
     button.classList.toggle("hidden", posts.length < PAGE_SIZE);
-  } catch (error) {
-    console.error(error);
-    if (reset) $("#feed-list").innerHTML = "";
-    showToast("Không thể tải bảng tin: " + error.message);
+  } catch (err) {
+    showToast("Lỗi tải bảng tin: " + err.message);
   } finally {
     button.disabled = false;
   }
@@ -478,9 +398,8 @@ $("#load-more-btn").addEventListener("click", () => loadFeed(false));
 
 async function renderPosts(posts, container) {
   if (!posts.length) return;
-
-  const authorIds = [...new Set(posts.map(post => post.author_id))];
-  const postIds = posts.map(post => post.id);
+  const authorIds = [...new Set(posts.map(p => p.author_id))];
+  const postIds = posts.map(p => p.id);
 
   const [profileResult, reactionResult, commentResult] = await Promise.all([
     db.from("profiles").select("id,display_name,avatar_url,role").in("id", authorIds),
@@ -488,94 +407,83 @@ async function renderPosts(posts, container) {
     db.from("comments").select("post_id,id").in("post_id", postIds)
   ]);
 
-  if (profileResult.error) throw profileResult.error;
-  if (reactionResult.error) throw reactionResult.error;
-  if (commentResult.error) throw commentResult.error;
-
   const profiles = Object.fromEntries((profileResult.data || []).map(p => [p.id, p]));
   const reactionsByPost = {};
-  (reactionResult.data || []).forEach(r => {
-    (reactionsByPost[r.post_id] ||= []).push(r);
-  });
+  (reactionResult.data || []).forEach(r => (reactionsByPost[r.post_id] ||= []).push(r));
   const commentCounts = {};
-  (commentResult.data || []).forEach(c => {
-    commentCounts[c.post_id] = (commentCounts[c.post_id] || 0) + 1;
-  });
+  (commentResult.data || []).forEach(c => commentCounts[c.post_id] = (commentCounts[c.post_id] || 0) + 1);
 
   for (const post of posts) {
-    const author = profiles[post.author_id] || {
-      display_name: "Tài khoản đã ẩn", avatar_url: null, role: "member"
-    };
+    const author = profiles[post.author_id] || { display_name: "Tài khoản", avatar_url: null };
     const reactions = reactionsByPost[post.id] || [];
     const myReaction = reactions.find(r => r.user_id === currentUser.id);
-    const reactionSummary = REACTIONS
-      .map(item => ({ ...item, count: reactions.filter(r => r.reaction_type === item.type).length }))
-      .filter(item => item.count > 0)
-      .sort((a, b) => b.count - a.count);
 
     const imageHTML = (post.image_urls || []).map(url => {
       const safe = safeURL(url);
-      return safe ? `<img src="${escapeHTML(safe)}" alt="Ảnh bài viết" loading="lazy">` : "";
+      return safe ? `<img src="${escapeHTML(safe)}" alt="Ảnh" loading="lazy">` : "";
     }).join("");
 
     const isOwner = post.author_id === currentUser.id;
     const isAdmin = currentProfile?.role === "admin";
     const canManage = isOwner || isAdmin;
+
     const card = document.createElement("article");
     card.className = "post-card";
     card.dataset.postId = post.id;
 
     card.innerHTML = `
       <div class="post-head">
-        <img class="avatar" src="${escapeHTML(avatarURL(author))}" alt="">
+        <img class="avatar clickable-author" data-author-id="${post.author_id}" src="${escapeHTML(avatarURL(author))}" alt="">
         <div class="post-head-info">
-          <strong>${escapeHTML(author.display_name || "Tài khoản")}${author.role === "admin" ? " · Quản trị viên" : ""}</strong>
+          <strong class="clickable-author" data-author-id="${post.author_id}">${escapeHTML(author.display_name)}${author.role === "admin" ? " · Quản trị viên" : ""}</strong>
           <div class="post-meta">${escapeHTML(formatDate(post.created_at))}${post.updated_at !== post.created_at ? " · Đã chỉnh sửa" : ""}</div>
         </div>
-        ${canManage ? `<button class="post-menu" data-action="post-menu" title="Tùy chọn">⋯</button>` : ""}
+        <button class="post-menu" data-action="post-menu" title="Tùy chọn">⋯</button>
       </div>
-      <div class="post-body">${renderRichText(post.content || "")}</div>
+      <div class="post-body">${parseMarkdown(post.content || "")}</div>
       ${imageHTML ? `<div class="post-images">${imageHTML}</div>` : ""}
       <div class="post-stats">
-        <span>${reactionSummary.map(r => `${r.icon} ${r.count}`).join(" ") || "Chưa có biểu cảm"}</span>
+        <span>${reactions.length} lượt bày tỏ cảm xúc</span>
         <span>${commentCounts[post.id] || 0} bình luận</span>
       </div>
       <div class="post-actions">
-        <button data-action="react" class="${myReaction ? "reacted" : ""}">${myReaction ? REACTIONS.find(r => r.type === myReaction.reaction_type)?.icon + " " + REACTIONS.find(r => r.type === myReaction.reaction_type)?.label : "👍 Thích"}</button>
+        <button data-action="react" class="${myReaction ? "reacted" : ""}">${myReaction ? "❤️ Cảm xúc" : "👍 Thích"}</button>
         <button data-action="comments">▢ Bình luận</button>
         <button data-action="share">↗ Chia sẻ</button>
       </div>
       <div class="reaction-picker hidden">
-        ${REACTIONS.map(r => `<button data-reaction="${r.type}" title="${r.label}">${r.icon}</button>`).join("")}
+        ${REACTIONS.map(r => `<button data-reaction="${r.type}">${r.icon}</button>`).join("")}
       </div>
       <div class="post-menu-panel hidden">
         ${canManage ? `<button data-action="edit-post">Chỉnh sửa bài viết</button>` : ""}
-        ${canManage ? `<button data-action="toggle-comments">${post.comments_enabled ? "Tắt bình luận" : "Bật bình luận"}</button>` : ""}
+        ${canManage ? `<button data-action="toggle-comments">${post.comments_enabled ? "Tắt tính năng bình luận" : "Bật tính năng bình luận"}</button>` : ""}
         ${canManage ? `<button data-action="delete-post" class="danger-text">Xóa bài viết</button>` : ""}
+        <button data-action="copy-link">Sao chép liên kết</button>
       </div>
     `;
     container.appendChild(card);
   }
 }
 
-function renderRichText(value) {
-  // Chỉ hỗ trợ các thẻ định dạng cơ bản do trình soạn thảo tạo ra.
-  // Không chèn HTML bài viết chưa được làm sạch trực tiếp vào DOM.
-  const escaped = escapeHTML(value);
-  return escaped
-    .replace(/&lt;(\/?)(b|strong|i|em|u|br)&gt;/gi, (match, slash, tag) => {
-      const allowed = tag.toLowerCase();
-      return allowed === "br" ? "<br>" : `<${slash}${allowed}>`;
-    })
-    .replace(/\n/g, "<br>");
+function parseMarkdown(text) {
+  let esc = escapeHTML(text);
+  esc = esc.replace(/^### (.*$)/gim, '### $1')
+           .replace(/^## (.*$)/gim, '## $1')
+           .replace(/^# (.*$)/gim, '# $1')
+           .replace(/^\> (.*$)/gim, '<blockquote>$1</blockquote>')
+           .replace(/\*\*(.*?)\*\*/g, '<b>$1</b>')
+           .replace(/\*(.*?)\*/g, '<i>$1</i>')
+           .replace(/\n/g, '<br>');
+  return esc;
 }
 
+/* POST EDITOR & MARKDOWN */
 function openPostEditor(post = null) {
   if (!currentUser) return showToast("Hãy đăng nhập trước.");
   selectedImages = [];
   $("#image-preview").innerHTML = "";
   $("#post-images").value = "";
-  $("#post-content").innerHTML = "";
+  $("#post-content").value = "";
   $("#comments-enabled").checked = true;
 
   editingPostId = post?.id || null;
@@ -583,7 +491,7 @@ function openPostEditor(post = null) {
   $("#publish-post-btn").textContent = post ? "Lưu" : "Đăng";
 
   if (post) {
-    $("#post-content").textContent = post.content || "";
+    $("#post-content").value = post.content || "";
     $("#comments-enabled").checked = !!post.comments_enabled;
     selectedImages = (post.image_urls || []).map(url => ({ existing: true, url }));
     renderImagePreview();
@@ -591,383 +499,351 @@ function openPostEditor(post = null) {
 
   setProfileImages();
   showModal("post-modal");
-  $("#post-content").focus();
 }
 
 $("#new-post-btn").addEventListener("click", () => openPostEditor());
 $("#composer-launch").addEventListener("click", () => openPostEditor());
 
-$$("[data-format]").forEach(button => {
-  button.addEventListener("click", () => {
-    $("#post-content").focus();
-    document.execCommand(button.dataset.format, false, null);
+$$("[data-md]").forEach(btn => {
+  btn.addEventListener("click", () => {
+    const input = $("#post-content");
+    const tag = btn.dataset.md;
+    const start = input.selectionStart;
+    const end = input.selectionEnd;
+    const val = input.value;
+
+    if (tag.endsWith(" ")) {
+      input.value = val.substring(0, start) + tag + val.substring(start);
+    } else {
+      const sel = val.substring(start, end);
+      input.value = val.substring(0, start) + tag + sel + tag + val.substring(end);
+    }
+    input.focus();
   });
 });
 
-$("#post-images").addEventListener("change", (event) => {
-  const files = [...event.target.files];
-  const allowed = ["image/jpeg", "image/png", "image/webp", "image/gif"];
-
+$("#post-images").addEventListener("change", (e) => {
+  const files = [...e.target.files];
   for (const file of files) {
-    if (!allowed.includes(file.type)) {
-      showToast("Chỉ hỗ trợ ảnh JPG, PNG, WEBP hoặc GIF.");
-      continue;
-    }
-    if (file.size > 8 * 1024 * 1024) {
-      showToast("Mỗi ảnh phải nhỏ hơn 8 MB.");
-      continue;
-    }
-    if (selectedImages.length >= 8) {
-      showToast("Mỗi bài viết được chọn tối đa 8 ảnh.");
-      break;
-    }
+    if (selectedImages.length >= 8) break;
     selectedImages.push({ file });
   }
-
-  event.target.value = "";
+  e.target.value = "";
   renderImagePreview();
 });
 
 function renderImagePreview() {
-  $("#image-preview").innerHTML = selectedImages.map((item, index) => {
+  $("#image-preview").innerHTML = selectedImages.map((item, idx) => {
     const src = item.file ? URL.createObjectURL(item.file) : item.url;
-    return `<div class="preview-item"><img src="${escapeHTML(src)}" alt="Ảnh xem trước"><button type="button" data-remove-image="${index}" aria-label="Bỏ ảnh">×</button></div>`;
+    return `<div class="preview-item"><img src="${escapeHTML(src)}" alt=""><button type="button" data-remove-image="${idx}">×</button></div>`;
   }).join("");
 }
 
-$("#image-preview").addEventListener("click", (event) => {
-  const button = event.target.closest("[data-remove-image]");
-  if (!button) return;
-  selectedImages.splice(Number(button.dataset.removeImage), 1);
+$("#image-preview").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-remove-image]");
+  if (!b) return;
+  selectedImages.splice(Number(b.dataset.removeImage), 1);
   renderImagePreview();
 });
 
 async function uploadImage(file, folder) {
-  const extension = file.name.split(".").pop().toLowerCase().replace(/[^a-z0-9]/g, "");
-  const path = `${currentUser.id}/${folder}/${crypto.randomUUID()}.${extension || "jpg"}`;
-  const { data, error } = await db.storage.from(STORAGE_BUCKET).upload(path, file, {
-    cacheControl: "3600",
-    upsert: false,
-    contentType: file.type
-  });
+  const ext = file.name.split(".").pop().toLowerCase().replace(/[^a-z0-9]/g, "");
+  const path = `${currentUser.id}/${folder}/${crypto.randomUUID()}.${ext || "jpg"}`;
+  const { data, error } = await db.storage.from(STORAGE_BUCKET).upload(path, file, { contentType: file.type });
   if (error) throw error;
-
-  const { data: publicData } = db.storage.from(STORAGE_BUCKET).getPublicUrl(data.path);
-  return publicData.publicUrl;
+  return db.storage.from(STORAGE_BUCKET).getPublicUrl(data.path).data.publicUrl;
 }
 
 $("#publish-post-btn").addEventListener("click", async () => {
   const button = $("#publish-post-btn");
-  const content = $("#post-content").innerHTML.trim();
-  const plainText = $("#post-content").innerText.trim();
-  const existingURLs = selectedImages.filter(x => x.existing).map(x => x.url);
+  const content = $("#post-content").value.trim();
 
-  if (!plainText && selectedImages.length === 0) {
-    showToast("Hãy nhập nội dung hoặc thêm ít nhất một ảnh.");
-    return;
+  if (!content && selectedImages.length === 0) {
+    return showToast("Hãy nhập nội dung hoặc chọn ảnh.");
   }
 
-  setBusy(button, true, editingPostId ? "Đang lưu..." : "Đang đăng...");
-
+  setBusy(button, true, "Đang xử lý...");
   try {
-    const imageURLs = [...existingURLs];
+    const imageURLs = selectedImages.filter(x => x.existing).map(x => x.url);
     for (const item of selectedImages) {
       if (item.file) imageURLs.push(await uploadImage(item.file, "posts"));
     }
 
-    // Lưu nội dung dạng văn bản có các thẻ định dạng cơ bản.
-    // Loại bỏ thẻ không được phép trước khi gửi lên cơ sở dữ liệu.
-    const cleanContent = sanitizeEditorHTML(content);
-
     if (editingPostId) {
       const { error } = await db.from("posts").update({
-        content: cleanContent,
-        image_urls: imageURLs,
-        comments_enabled: $("#comments-enabled").checked
+        content, image_urls: imageURLs, comments_enabled: $("#comments-enabled").checked
       }).eq("id", editingPostId);
       if (error) throw error;
     } else {
       const { error } = await db.from("posts").insert({
-        author_id: currentUser.id,
-        content: cleanContent,
-        image_urls: imageURLs,
-        comments_enabled: $("#comments-enabled").checked
+        author_id: currentUser.id, content, image_urls: imageURLs, comments_enabled: $("#comments-enabled").checked
       });
       if (error) throw error;
     }
 
     hideModal("post-modal");
     await loadFeed(true);
-    if (!$("#profile-view").classList.contains("hidden")) await loadOwnProfileView();
     showToast(editingPostId ? "Đã cập nhật bài viết." : "Đã đăng bài viết.");
     editingPostId = null;
-  } catch (error) {
-    console.error(error);
-    showToast("Không thể lưu bài viết: " + error.message);
+  } catch (err) {
+    showToast(err.message);
   } finally {
     setBusy(button, false);
   }
 });
 
-function sanitizeEditorHTML(html) {
-  const template = document.createElement("template");
-  template.innerHTML = html;
-  const allowed = new Set(["B", "STRONG", "I", "EM", "U", "BR", "DIV", "P"]);
-
-  function clean(node) {
-    [...node.childNodes].forEach(child => {
-      if (child.nodeType === Node.ELEMENT_NODE) {
-        if (!allowed.has(child.tagName)) {
-          child.replaceWith(document.createTextNode(child.textContent || ""));
-        } else {
-          [...child.attributes].forEach(attr => child.removeAttribute(attr.name));
-          clean(child);
-        }
-      } else if (child.nodeType !== Node.TEXT_NODE) {
-        child.remove();
-      }
-    });
+/* POST ACTIONS & AUTHOR CLICK */
+document.addEventListener("click", async (e) => {
+  const authorEl = e.target.closest(".clickable-author");
+  if (authorEl) {
+    const id = authorEl.dataset.authorId;
+    if (id) viewUserProfile(id);
+    return;
   }
-  clean(template.content);
-  return template.innerHTML;
-}
 
-/* ---------------- POST ACTIONS ---------------- */
-
-$("#feed-list").addEventListener("click", handlePostAction);
-$("#profile-posts").addEventListener("click", handlePostAction);
-
-async function handlePostAction(event) {
-  const card = event.target.closest("[data-post-id]");
+  const card = e.target.closest("[data-post-id]");
   if (!card) return;
-
   const postId = card.dataset.postId;
-  const actionButton = event.target.closest("[data-action], [data-reaction]");
-  if (!actionButton) return;
+  const btn = e.target.closest("[data-action], [data-reaction]");
+  if (!btn) return;
 
-  const action = actionButton.dataset.action;
+  const action = btn.dataset.action;
 
   try {
-    if (action === "react") {
-      card.querySelector(".reaction-picker").classList.toggle("hidden");
-    } else if (actionButton.dataset.reaction) {
-      await toggleReaction(postId, actionButton.dataset.reaction);
-      await loadFeed(true);
-      if (!$("#profile-view").classList.contains("hidden")) await loadOwnProfileView();
-    } else if (action === "comments") {
-      await openComments(postId);
-    } else if (action === "share") {
-      const url = `${location.origin}${location.pathname}#post-${postId}`;
-      await navigator.clipboard.writeText(url);
-      showToast("Đã sao chép liên kết bài viết.");
-    } else if (action === "post-menu") {
+    if (action === "post-menu") {
       card.querySelector(".post-menu-panel")?.classList.toggle("hidden");
+    } else if (action === "react") {
+      card.querySelector(".reaction-picker").classList.toggle("hidden");
+    } else if (btn.dataset.reaction) {
+      await toggleReaction(postId, btn.dataset.reaction);
+      await loadFeed(true);
+    } else if (action === "comments") {
+      openComments(postId);
+    } else if (action === "share" || action === "copy-link") {
+      const link = `${location.origin}${location.pathname}#post-${postId}`;
+      await navigator.clipboard.writeText(link);
+      showToast("Đã sao chép liên kết bài viết.");
+      card.querySelector(".post-menu-panel")?.classList.add("hidden");
     } else if (action === "edit-post") {
-      const { data, error } = await db.from("posts").select("*").eq("id", postId).single();
-      if (error) throw error;
-      if (data.author_id !== currentUser.id && currentProfile?.role !== "admin") {
-        throw new Error("Bạn không có quyền sửa bài viết này.");
-      }
+      const { data } = await db.from("posts").select("*").eq("id", postId).single();
       openPostEditor(data);
     } else if (action === "toggle-comments") {
-      const { data, error: readError } = await db.from("posts")
-        .select("author_id,comments_enabled").eq("id", postId).single();
-      if (readError) throw readError;
-      if (data.author_id !== currentUser.id && currentProfile?.role !== "admin") {
-        throw new Error("Bạn không có quyền thay đổi cài đặt bài viết này.");
-      }
-      const { error } = await db.from("posts").update({
-        comments_enabled: !data.comments_enabled
-      }).eq("id", postId);
-      if (error) throw error;
+      const { data } = await db.from("posts").select("comments_enabled").eq("id", postId).single();
+      await db.from("posts").update({ comments_enabled: !data.comments_enabled }).eq("id", postId);
       await loadFeed(true);
       showToast(data.comments_enabled ? "Đã tắt bình luận." : "Đã bật bình luận.");
     } else if (action === "delete-post") {
-      if (!confirm("Bạn có chắc muốn xóa bài viết này?")) return;
-      const { error } = await db.from("posts").delete().eq("id", postId);
-      if (error) throw error;
-      await loadFeed(true);
-      if (!$("#profile-view").classList.contains("hidden")) await loadOwnProfileView();
-      showToast("Đã xóa bài viết.");
+      const ok = await showConfirmDialog("Xóa bài viết", "Bạn có chắc chắn muốn xóa bài viết này không?");
+      if (ok) {
+        await db.from("posts").delete().eq("id", postId);
+        await loadFeed(true);
+        showToast("Đã xóa bài viết.");
+      }
     }
-  } catch (error) {
-    showToast(error.message || "Không thể thực hiện thao tác.");
+  } catch (err) {
+    showToast(err.message);
   }
-}
+});
 
 async function toggleReaction(postId, type) {
-  const { data: existing, error: readError } = await db.from("reactions")
-    .select("id,reaction_type").eq("post_id", postId).eq("user_id", currentUser.id).maybeSingle();
-  if (readError) throw readError;
-
+  const { data: existing } = await db.from("reactions").select("id,reaction_type").eq("post_id", postId).eq("user_id", currentUser.id).maybeSingle();
   if (existing?.reaction_type === type) {
-    const { error } = await db.from("reactions").delete().eq("id", existing.id);
-    if (error) throw error;
+    await db.from("reactions").delete().eq("id", existing.id);
   } else if (existing) {
-    const { error } = await db.from("reactions")
-      .update({ reaction_type: type }).eq("id", existing.id);
-    if (error) throw error;
+    await db.from("reactions").update({ reaction_type: type }).eq("id", existing.id);
   } else {
-    const { error } = await db.from("reactions").insert({
-      post_id: postId, user_id: currentUser.id, reaction_type: type
-    });
-    if (error) throw error;
+    await db.from("reactions").insert({ post_id: postId, user_id: currentUser.id, reaction_type: type });
   }
 }
 
-/* ---------------- COMMENTS ---------------- */
-
+/* COMMENT TREE & NESTED COMMENTS */
 async function openComments(postId) {
-  const { data: post, error: postError } = await db.from("posts")
-    .select("id,comments_enabled").eq("id", postId).single();
-  if (postError) throw postError;
-
+  const { data: post } = await db.from("posts").select("id,comments_enabled").eq("id", postId).single();
   currentCommentsPost = post;
+  replyToCommentId = null;
+  $("#reply-indicator").classList.add("hidden");
+
   $("#comment-input").disabled = !post.comments_enabled;
   $("#comment-form").querySelector("button").disabled = !post.comments_enabled;
-  $("#comment-input").placeholder = post.comments_enabled
-    ? "Viết bình luận..." : "Bài viết đã tắt bình luận";
+  $("#comment-input").placeholder = post.comments_enabled ? "Viết bình luận..." : "Bài viết đã tắt bình luận";
+
   await loadComments();
   showModal("comments-modal");
 }
 
 async function loadComments() {
   if (!currentCommentsPost) return;
-
   const { data: comments, error } = await db.from("comments")
-    .select("id,post_id,author_id,content,created_at,updated_at")
+    .select("*")
     .eq("post_id", currentCommentsPost.id)
     .order("created_at", { ascending: true });
 
-  if (error) throw error;
+  if (error) return showToast(error.message);
 
-  const ids = [...new Set((comments || []).map(c => c.author_id))];
+  const authorIds = [...new Set((comments || []).map(c => c.author_id))];
   let profiles = {};
-  if (ids.length) {
-    const result = await db.from("profiles").select("id,display_name,avatar_url,role").in("id", ids);
-    if (result.error) throw result.error;
-    profiles = Object.fromEntries((result.data || []).map(p => [p.id, p]));
+  if (authorIds.length) {
+    const res = await db.from("profiles").select("id,display_name,avatar_url").in("id", authorIds);
+    profiles = Object.fromEntries((res.data || []).map(p => [p.id, p]));
   }
 
-  $("#comments-list").innerHTML = (comments || []).map(comment => {
-    const profile = profiles[comment.author_id] || { display_name: "Tài khoản" };
-    const canManage = comment.author_id === currentUser.id || currentProfile?.role === "admin";
-    return `
-      <div class="comment-row" data-comment-id="${comment.id}">
-        <img class="avatar" src="${escapeHTML(avatarURL(profile))}" alt="">
-        <div class="comment-bubble">
-          <strong>${escapeHTML(profile.display_name || "Tài khoản")}</strong>
-          <p>${escapeHTML(comment.content).replace(/\n/g, "<br>")}</p>
-          <div class="comment-tools">
-            <span>${escapeHTML(formatDate(comment.created_at))}</span>
-            ${comment.updated_at !== comment.created_at ? "<span>Đã chỉnh sửa</span>" : ""}
-            ${canManage ? '<button data-comment-action="edit">Sửa</button><button data-comment-action="delete">Xóa</button>' : ""}
-          </div>
-        </div>
-      </div>`;
-  }).join("") || '<div class="empty-state">Chưa có bình luận.</div>';
+  const rootComments = (comments || []).filter(c => !c.parent_id);
+  const replies = (comments || []).filter(c => c.parent_id);
+
+  $("#comments-list").innerHTML = rootComments.map(c => renderCommentTree(c, replies, profiles)).join("") || '<div class="empty-state">Chưa có bình luận nào.</div>';
 }
 
-$("#comment-form").addEventListener("submit", async (event) => {
-  event.preventDefault();
-  if (!currentCommentsPost?.comments_enabled) return;
+function renderCommentTree(comment, allReplies, profiles) {
+  const author = profiles[comment.author_id] || { display_name: "Tài khoản" };
+  const childReplies = allReplies.filter(r => r.parent_id === comment.id);
+  const isOwner = comment.author_id === currentUser.id || currentProfile?.role === "admin";
+
+  return `
+    <div class="comment-item" data-comment-id="${comment.id}">
+      <div class="comment-row">
+        <img class="avatar tiny" src="${escapeHTML(avatarURL(author))}" alt="">
+        <div class="comment-bubble">
+          <strong>${escapeHTML(author.display_name)}</strong>
+          <p>${escapeHTML(comment.content)}</p>
+          <div class="comment-tools">
+            <span>${escapeHTML(formatDate(comment.created_at))}</span>
+            <button data-comment-action="reply" data-author="${escapeHTML(author.display_name)}">Trả lời</button>
+            <button class="comment-menu-btn" data-comment-action="menu">⋯</button>
+          </div>
+          <div class="comment-menu-panel hidden">
+            ${isOwner ? `<button data-comment-action="edit">Chỉnh sửa</button><button data-comment-action="delete" class="danger-text">Xóa</button>` : ""}
+            <button data-comment-action="react">Bày tỏ cảm xúc</button>
+            <button data-comment-action="reply" data-author="${escapeHTML(author.display_name)}">Trả lời</button>
+            <button data-comment-action="copy">Sao chép</button>
+          </div>
+        </div>
+      </div>
+      ${childReplies.length ? `<div class="replies-tree">${childReplies.map(r => renderCommentTree(r, allReplies, profiles)).join("")}</div>` : ""}
+    </div>
+  `;
+}
+
+$("#comment-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
   const content = $("#comment-input").value.trim();
-  if (!content) return;
+  if (!content || !currentCommentsPost) return;
 
-  const button = event.submitter;
-  setBusy(button, true, "Đang gửi...");
-
+  const btn = e.submitter;
+  setBusy(btn, true, "Đang gửi...");
   try {
     const { error } = await db.from("comments").insert({
       post_id: currentCommentsPost.id,
       author_id: currentUser.id,
+      parent_id: replyToCommentId,
       content
     });
     if (error) throw error;
-
     $("#comment-input").value = "";
+    replyToCommentId = null;
+    $("#reply-indicator").classList.add("hidden");
     await loadComments();
-    await loadFeed(true);
-  } catch (error) {
-    showToast("Không thể gửi bình luận: " + error.message);
+  } catch (err) {
+    showToast("Không thể gửi bình luận: " + err.message);
   } finally {
-    setBusy(button, false);
+    setBusy(btn, false);
   }
 });
 
-$("#comments-list").addEventListener("click", async (event) => {
-  const button = event.target.closest("[data-comment-action]");
-  if (!button) return;
+$("#cancel-reply-btn").addEventListener("click", () => {
+  replyToCommentId = null;
+  $("#reply-indicator").classList.add("hidden");
+});
 
-  const row = button.closest("[data-comment-id]");
+$("#comments-list").addEventListener("click", async (e) => {
+  const btn = e.target.closest("[data-comment-action]");
+  if (!btn) return;
+
+  const row = btn.closest("[data-comment-id]");
   const commentId = row.dataset.commentId;
+  const action = btn.dataset.commentAction;
 
-  try {
-    const { data: comment, error: readError } = await db.from("comments")
-      .select("id,author_id,content").eq("id", commentId).single();
-    if (readError) throw readError;
-
-    const canManage = comment.author_id === currentUser.id || currentProfile?.role === "admin";
-    if (!canManage) throw new Error("Bạn không có quyền sửa hoặc xóa bình luận này.");
-
-    if (button.dataset.commentAction === "edit") {
-      const updated = prompt("Chỉnh sửa bình luận:", comment.content);
-      if (updated === null) return;
-      if (!updated.trim()) return showToast("Bình luận không được để trống.");
-
-      const { error } = await db.from("comments")
-        .update({ content: updated.trim() }).eq("id", commentId);
-      if (error) throw error;
-    } else {
-      if (!confirm("Bạn có chắc muốn xóa bình luận này?")) return;
-      const { error } = await db.from("comments").delete().eq("id", commentId);
-      if (error) throw error;
+  if (action === "menu") {
+    row.querySelector(".comment-menu-panel")?.classList.toggle("hidden");
+  } else if (action === "reply") {
+    replyToCommentId = commentId;
+    $("#reply-indicator-text").textContent = `Đang trả lời ${btn.dataset.author || "bình luận"}...`;
+    $("#reply-indicator").classList.remove("hidden");
+    $("#comment-input").focus();
+  } else if (action === "copy") {
+    const txt = row.querySelector("p")?.textContent || "";
+    await navigator.clipboard.writeText(txt);
+    showToast("Đã sao chép nội dung.");
+  } else if (action === "edit") {
+    const currentTxt = row.querySelector("p")?.textContent || "";
+    const newTxt = await showPromptDialog("Chỉnh sửa bình luận", "Nhập nội dung mới:", currentTxt);
+    if (newTxt && newTxt.trim()) {
+      await db.from("comments").update({ content: newTxt.trim() }).eq("id", commentId);
+      await loadComments();
+      showToast("Đã cập nhật bình luận.");
     }
-
-    await loadComments();
-    await loadFeed(true);
-  } catch (error) {
-    showToast(error.message || "Không thể xử lý bình luận.");
+  } else if (action === "delete") {
+    const ok = await showConfirmDialog("Xóa bình luận", "Bạn có chắc muốn xóa bình luận này?");
+    if (ok) {
+      await db.from("comments").delete().eq("id", commentId);
+      await loadComments();
+      showToast("Đã xóa bình luận.");
+    }
+  } else if (action === "react") {
+    showToast("Đã gửi cảm xúc.");
   }
 });
 
-/* ---------------- PROFILE ---------------- */
+/* PROFILE VIEW & USER PROFILES */
+async function viewUserProfile(userId) {
+  viewedProfileId = userId;
+  showView("profile");
+  $("#profile-posts").innerHTML = '<div class="loading">Đang tải...</div>';
 
-async function loadOwnProfileView() {
-  if (!currentUser) return;
   try {
-    await ensureProfile();
-    const { data: links, error: linkError } = await db.from("social_links")
-      .select("platform,url").eq("profile_id", currentUser.id);
-    if (linkError) throw linkError;
+    const profile = await getProfile(userId);
+    const isSelf = userId === currentUser.id;
 
-    const safeLinks = (links || []).map(link => {
-      const url = safeURL(link.url);
-      if (!url) return "";
-      const label = SOCIAL_PLATFORMS.find(p => p[0] === link.platform)?.[1] || link.platform;
-      return `<a href="${escapeHTML(url)}" target="_blank" rel="noopener noreferrer">${escapeHTML(label)}</a>`;
+    const { data: links } = await db.from("social_links").select("platform,url").eq("profile_id", userId);
+    const linksHTML = (links || []).map(l => {
+      const url = safeURL(l.url);
+      return url ? `<a href="${escapeHTML(url)}" target="_blank" rel="noopener">${escapeHTML(l.platform)}</a>` : "";
     }).join("");
 
     $("#profile-panel").innerHTML = `
-      <img class="avatar huge" src="${escapeHTML(avatarURL(currentProfile))}" alt="">
-      <h2>${escapeHTML(currentProfile.display_name || "Người dùng Hingram")}</h2>
-      <p class="muted small-text">ID: ${escapeHTML(currentUser.id)}</p>
-      <div class="profile-bio">${escapeHTML(currentProfile.bio || "Chưa có tiểu sử.")}</div>
-      <div class="profile-links">${safeLinks}</div>
+      ${coverURL(profile) ? `<img class="profile-cover" src="${escapeHTML(coverURL(profile))}" alt="Ảnh bìa">` : `<div class="profile-cover"></div>`}
+      <div class="profile-header-content">
+        <div class="profile-top-controls">
+          <button class="icon-button" id="share-profile-btn" title="Chia sẻ trang cá nhân">↗</button>
+          ${isSelf ? `<button class="btn secondary" id="profile-edit-btn">Chỉnh sửa</button>` : ""}
+        </div>
+        <div class="profile-avatar-overlay">
+          <img class="avatar huge" src="${escapeHTML(avatarURL(profile))}" alt="">
+        </div>
+        <h2>${escapeHTML(profile.display_name || "Người dùng")}</h2>
+        <div class="profile-bio">${escapeHTML(profile.bio || "Chưa có tiểu sử.")}</div>
+        <div class="profile-links">${linksHTML}</div>
+      </div>
     `;
 
-    const { data: posts, error } = await db.from("posts").select("*")
-      .eq("author_id", currentUser.id).order("created_at", { ascending: false }).limit(30);
-    if (error) throw error;
+    $("#share-profile-btn").addEventListener("click", async () => {
+      const link = `${location.origin}${location.pathname}#profile-${userId}`;
+      await navigator.clipboard.writeText(link);
+      showToast("Đã sao chép liên kết trang cá nhân.");
+    });
 
+    if (isSelf) {
+      $("#profile-edit-btn")?.addEventListener("click", openProfileEditor);
+    }
+
+    const { data: posts } = await db.from("posts").select("*").eq("author_id", userId).order("created_at", { ascending: false });
     $("#profile-posts").innerHTML = "";
-    if (!posts.length) {
-      $("#profile-posts").innerHTML = '<div class="empty-state">Bạn chưa đăng bài viết nào.</div>';
+    if (!posts || !posts.length) {
+      $("#profile-posts").innerHTML = '<div class="empty-state">Chưa có bài viết nào.</div>';
     } else {
       await renderPosts(posts, $("#profile-posts"));
     }
-  } catch (error) {
-    showToast("Không thể tải hồ sơ: " + error.message);
+  } catch (err) {
+    showToast("Không thể tải trang cá nhân: " + err.message);
   }
 }
 
@@ -976,10 +852,10 @@ function renderSettingsProfile() {
     <img class="avatar huge" src="${escapeHTML(avatarURL(currentProfile))}" alt="">
     <h3>${escapeHTML(currentProfile?.display_name || "Tài khoản")}</h3>
     <p class="muted small-text">${escapeHTML(currentUser?.email || "")}</p>
-    <p class="muted small-text">${currentProfile?.role === "admin" ? "Quản trị viên" : "Thành viên"}</p>
   `;
 }
 
+/* PROFILE EDITOR & SOCIAL LINKS DYNAMIC ADDITION */
 async function openProfileEditor() {
   if (!currentUser) return;
   await ensureProfile();
@@ -988,41 +864,51 @@ async function openProfileEditor() {
   $("#edit-bio").value = currentProfile.bio || "";
   $("#edit-theme").value = currentProfile.theme || "system";
   $("#edit-avatar-preview").src = avatarURL(currentProfile);
+  $("#edit-cover-preview").src = coverURL(currentProfile);
   selectedAvatarFile = null;
-  $("#avatar-file").value = "";
+  selectedCoverFile = null;
 
-  const { data: links, error } = await db.from("social_links")
-    .select("platform,url").eq("profile_id", currentUser.id);
-  if (error) return showToast(error.message);
+  const { data: links } = await db.from("social_links").select("platform,url").eq("profile_id", currentUser.id);
+  $("#social-links-list").innerHTML = "";
 
-  const byPlatform = Object.fromEntries((links || []).map(link => [link.platform, link.url]));
-  $("#social-links-editor").innerHTML = SOCIAL_PLATFORMS.map(([key, label]) => `
-    <div class="social-row">
-      <label for="social-${key}">${label}</label>
-      <input id="social-${key}" type="url" data-social-platform="${key}"
-             value="${escapeHTML(byPlatform[key] || "")}" placeholder="https://...">
-    </div>
-  `).join("");
+  (links || []).forEach(l => addSocialLinkRow(l.platform, l.url));
 
   hideModal("settings-modal");
   showModal("profile-modal");
 }
 
-$("#avatar-file").addEventListener("change", (event) => {
-  const file = event.target.files?.[0];
-  if (!file) return;
-  if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) {
-    showToast("Ảnh đại diện chỉ hỗ trợ JPG, PNG hoặc WEBP.");
-    event.target.value = "";
-    return;
+$("#toggle-social-editor-btn").addEventListener("click", () => {
+  $("#social-links-container").classList.toggle("hidden");
+});
+
+function addSocialLinkRow(platform = "Facebook", url = "") {
+  const row = document.createElement("div");
+  row.className = "social-row-custom";
+  row.innerHTML = `
+    <input class="social-name-input" value="${escapeHTML(platform)}" placeholder="Tên mạng">
+    <input class="social-url-input" type="url" value="${escapeHTML(url)}" placeholder="https://...">
+    <button type="button" class="remove-social-btn">×</button>
+  `;
+  row.querySelector(".remove-social-btn").addEventListener("click", () => row.remove());
+  $("#social-links-list").appendChild(row);
+}
+
+$("#add-custom-social-btn").addEventListener("click", () => addSocialLinkRow("", ""));
+
+$("#avatar-file").addEventListener("change", (e) => {
+  const file = e.target.files?.[0];
+  if (file) {
+    selectedAvatarFile = file;
+    $("#edit-avatar-preview").src = URL.createObjectURL(file);
   }
-  if (file.size > 8 * 1024 * 1024) {
-    showToast("Ảnh đại diện phải nhỏ hơn 8 MB.");
-    event.target.value = "";
-    return;
+});
+
+$("#cover-file").addEventListener("change", (e) => {
+  const file = e.target.files?.[0];
+  if (file) {
+    selectedCoverFile = file;
+    $("#edit-cover-preview").src = URL.createObjectURL(file);
   }
-  selectedAvatarFile = file;
-  $("#edit-avatar-preview").src = URL.createObjectURL(file);
 });
 
 $("#save-profile-btn").addEventListener("click", async () => {
@@ -1031,95 +917,54 @@ $("#save-profile-btn").addEventListener("click", async () => {
   const bio = $("#edit-bio").value.trim();
   const theme = $("#edit-theme").value;
 
-  if (displayName.length < 2) {
-    showToast("Tên hiển thị cần có ít nhất 2 ký tự.");
-    return;
-  }
+  if (displayName.length < 2) return showToast("Tên hiển thị cần ít nhất 2 ký tự.");
 
   setBusy(button, true, "Đang lưu...");
   try {
     let avatar_url = currentProfile.avatar_url;
-    if (selectedAvatarFile) {
-      avatar_url = await uploadImage(selectedAvatarFile, "avatars");
-    }
+    let cover_url = currentProfile.cover_url;
 
-    const { error: profileError } = await db.from("profiles").update({
-      display_name: displayName,
-      bio,
-      theme,
-      avatar_url
-    }).eq("id", currentUser.id);
-    if (profileError) throw profileError;
+    if (selectedAvatarFile) avatar_url = await uploadImage(selectedAvatarFile, "avatars");
+    if (selectedCoverFile) cover_url = await uploadImage(selectedCoverFile, "covers");
 
-    for (const [platform] of SOCIAL_PLATFORMS) {
-      const input = $(`[data-social-platform="${platform}"]`);
-      const rawURL = input.value.trim();
+    await db.from("profiles").update({ display_name: displayName, bio, theme, avatar_url, cover_url }).eq("id", currentUser.id);
 
-      if (!rawURL) {
-        const { error } = await db.from("social_links")
-          .delete().eq("profile_id", currentUser.id).eq("platform", platform);
-        if (error) throw error;
-        continue;
+    await db.from("social_links").delete().eq("profile_id", currentUser.id);
+    const rows = $$(".social-row-custom");
+    for (const r of rows) {
+      const pName = r.querySelector(".social-name-input").value.trim();
+      const pUrl = r.querySelector(".social-url-input").value.trim();
+      if (pName && pUrl) {
+        const safe = safeURL(pUrl);
+        if (safe) {
+          await db.from("social_links").insert({ profile_id: currentUser.id, platform: pName, url: safe });
+        }
       }
-
-      const url = safeURL(rawURL);
-      if (!url) throw new Error(`Liên kết ${platform} không hợp lệ. Hãy nhập URL bắt đầu bằng http:// hoặc https://.`);
-
-      const { error } = await db.from("social_links").upsert({
-        profile_id: currentUser.id,
-        platform,
-        url
-      }, { onConflict: "profile_id,platform" });
-      if (error) throw error;
     }
 
     await ensureProfile();
     setProfileImages();
     applyCurrentTheme();
     hideModal("profile-modal");
-    await loadOwnProfileView();
-    await loadFeed(true);
+    if (viewedProfileId === currentUser.id) viewUserProfile(currentUser.id);
     showToast("Đã lưu hồ sơ.");
-  } catch (error) {
-    showToast("Không thể lưu hồ sơ: " + error.message);
+  } catch (err) {
+    showToast("Lỗi lưu hồ sơ: " + err.message);
   } finally {
     setBusy(button, false);
   }
 });
 
-/* ---------------- MODALS / STARTUP ---------------- */
-
-$$("[data-close]").forEach(button => {
-  button.addEventListener("click", () => hideModal(button.dataset.close));
-});
-
-$$(".modal").forEach(modal => {
-  modal.addEventListener("click", (event) => {
-    if (event.target === modal) modal.classList.add("hidden");
-  });
-});
-
-window.matchMedia("(prefers-color-scheme: dark)").addEventListener?.("change", () => {
-  if ((currentProfile?.theme || "system") === "system") applyCurrentTheme();
-});
+$$("[data-close]").forEach(b => b.addEventListener("click", () => hideModal(b.dataset.close)));
+$$(".modal").forEach(m => m.addEventListener("click", (e) => { if (e.target === m) m.classList.add("hidden"); }));
 
 async function initialize() {
-  if (SUPABASE_URL.includes("YOUR_SUPABASE") ||
-      SUPABASE_KEY.includes("YOUR_SUPABASE")) {
+  if (SUPABASE_URL.includes("YOUR_SUPABASE") || SUPABASE_KEY.includes("YOUR_SUPABASE")) {
     showAuth();
-    showToast("Hãy nhập Project URL và Publishable key vào app.js.", 7000);
-    return;
+    return showToast("Hãy nhập cấu hình Supabase URL và Publishable Key.");
   }
-
-  const { data, error } = await db.auth.getSession();
-  if (error) {
-    showToast("Không thể kiểm tra phiên đăng nhập: " + error.message);
-    showAuth();
-    return;
-  }
-
+  const { data } = await db.auth.getSession();
   await handleAuthState(data.session);
 }
 
 initialize();
-
