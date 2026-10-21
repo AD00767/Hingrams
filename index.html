@@ -37,7 +37,6 @@
       </form>
 
       <form id="signup-form" class="auth-form hidden">
-        <!-- Nội dung đăng ký giữ nguyên như cũ -->
         <h2>Tạo tài khoản</h2>
         <p class="muted">Bắt đầu hành trình của bạn trên Hingram.</p>
         <div id="signup-step-1">
@@ -77,9 +76,8 @@
         <span class="brand-mark small">H</span><span>Hingram</span>
       </button>
       <div class="topbar-actions">
-        <button class="icon-button" id="new-post-btn" title="Tạo bài viết" aria-label="Tạo bài viết">＋</button>
-        <!-- Bỏ tên để tránh tràn màn hình, chỉ để avatar -->
-        <button class="profile-shortcut" id="profile-btn" title="Hồ sơ cá nhân">
+        <button class="icon-button" id="new-post-btn" title="Tạo bài viết">＋</button>
+        <button class="profile-shortcut" id="profile-btn" title="Tùy chọn">
           <img id="top-avatar" alt="" class="avatar tiny">
         </button>
       </div>
@@ -90,7 +88,6 @@
         <button class="nav-item active" id="nav-home">⌂ <span>Trang chủ</span></button>
         <button class="nav-item" id="nav-profile">◉ <span>Hồ sơ cá nhân</span></button>
         
-        <!-- Footer Website -->
         <footer class="app-footer">
           <strong>Hingram</strong>
           <p>Mạng xã hội kết nối mọi người.</p>
@@ -120,8 +117,7 @@
 
         <section id="profile-view" class="hidden">
           <div class="section-heading">
-            <div><h1 id="profile-view-title">Hồ sơ cá nhân</h1><p class="muted" id="profile-view-desc">Thông tin và bài viết</p></div>
-            <div id="profile-actions-container"></div>
+            <div><h1 id="profile-view-title">Hồ sơ cá nhân</h1><p class="muted">Thông tin và bài viết</p></div>
           </div>
           <div id="profile-panel" class="profile-panel"></div>
           <h2 class="subheading">Bài viết</h2>
@@ -143,14 +139,20 @@
         <img id="editor-avatar" class="avatar" alt="">
         <div>
           <strong id="editor-name">Tài khoản</strong>
-          <p class="muted small-text">Hỗ trợ Markdown: # H1, ## H2, **Đậm**, *Nghiêng*, - Danh sách</p>
         </div>
       </div>
+      
       <div class="format-toolbar">
-        <button type="button" data-format="bold"><b>B</b></button>
-        <button type="button" data-format="italic"><i>I</i></button>
-        <button type="button" data-format="underline"><u>U</u></button>
+        <button type="button" data-md="# " title="Heading 1">H1</button>
+        <button type="button" data-md="## " title="Heading 2">H2</button>
+        <button type="button" data-md="### " title="Heading 3">H3</button>
+        <button type="button" data-md-wrap="**" title="In đậm"><b>B</b></button>
+        <button type="button" data-md-wrap="*" title="In nghiêng"><i>I</i></button>
+        <button type="button" data-md-wrap="***" title="Đậm & Nghiêng"><b><i>BI</i></b></button>
+        <button type="button" data-format="underline" title="Gạch chân"><u>U</u></button>
+        <button type="button" data-md="- " title="Danh sách">List</button>
       </div>
+      
       <div id="post-content" class="post-input" contenteditable="true" data-placeholder="Bạn đang nghĩ gì?" role="textbox" aria-multiline="true"></div>
       <div id="image-preview" class="image-preview"></div>
       <div class="editor-options">
@@ -182,7 +184,7 @@
           <input id="avatar-file" type="file" accept="image/jpeg,image/png,image/webp" hidden>
         </label>
       </div>
-      <label for="edit-display-name">Tên hiển thị</label>
+      <label for="edit-display-name" style="margin-top: 40px;">Tên hiển thị</label>
       <input id="edit-display-name" maxlength="60" required>
       <label for="edit-bio">Tiểu sử</label>
       <textarea id="edit-bio" maxlength="300" rows="3" placeholder="Giới thiệu đôi điều về bạn"></textarea>
@@ -235,11 +237,11 @@
   </div>
 
   <!-- SETTINGS -->
-  <div id="settings-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+  <div id="settings-modal" class="modal hidden" role="dialog" aria-modal="true">
     <div class="modal-card" style="width: min(100%, 400px);">
       <div class="modal-header">
         <button class="icon-button" data-close="settings-modal" aria-label="Đóng">×</button>
-        <h2 id="settings-title">Tùy chọn</h2>
+        <h2>Tùy chọn</h2>
       </div>
       <div id="settings-profile" class="settings-profile"></div>
       <button class="btn secondary full" id="settings-edit-profile">Chỉnh sửa hồ sơ</button>
@@ -248,7 +250,7 @@
     </div>
   </div>
 
-  <!-- CUSTOM DIALOG (Thay thế Prompt / Confirm) -->
+  <!-- CUSTOM DIALOG -->
   <div id="custom-dialog" class="modal hidden" role="dialog" aria-modal="true" style="z-index: 9999;">
     <div class="modal-card" style="width: min(100%, 400px); text-align: center;">
       <h3 id="dialog-title" style="margin-bottom: 12px; font-size: 18px;"></h3>
