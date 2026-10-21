@@ -57,9 +57,7 @@ function avatarURL(profile) {
     "data:image/svg+xml," + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><rect width="100" height="100" fill="#dddddd"/><circle cx="50" cy="36" r="19" fill="#999999"/><path d="M15 100c3-25 18-36 35-36s32 11 35 36" fill="#999999"/></svg>');
 }
 
-function coverURL(profile) {
-  return safeURL(profile?.cover_url) || ""; 
-}
+function coverURL(profile) { return safeURL(profile?.cover_url) || ""; }
 
 function showToast(message, duration = 3500) {
   const toast = $("#toast");
@@ -96,7 +94,7 @@ function applyTheme(theme) {
   document.documentElement.dataset.theme = resolved;
 }
 
-// === CUSTOM DIALOG (Thay thế Alert/Prompt/Confirm) ===
+// === CUSTOM DIALOG ===
 function showCustomDialog(title, message, isPrompt = false, defaultValue = "") {
   return new Promise((resolve) => {
     $("#dialog-title").textContent = title;
@@ -118,8 +116,7 @@ function showCustomDialog(title, message, isPrompt = false, defaultValue = "") {
     $("#dialog-cancel-btn").onclick = () => { cleanup(); resolve(null); };
     $("#dialog-confirm-btn").onclick = () => {
       const result = isPrompt ? input.value : true;
-      cleanup();
-      resolve(result);
+      cleanup(); resolve(result);
     };
   });
 }
@@ -159,16 +156,14 @@ async function ensureProfile() {
     if (data) { currentProfile = data; return data; }
     await new Promise(r => setTimeout(r, 500));
   }
-  throw new Error("Không tìm thấy hồ sơ. Vui lòng thử tải lại trang.");
+  throw new Error("Không tìm thấy hồ sơ. Vui lòng tải lại trang.");
 }
 
 async function handleAuthState(session) {
   currentUser = session?.user || null;
   if (!currentUser) { currentProfile = null; showAuth(); return; }
   try {
-    await ensureProfile();
-    showApp();
-    await loadFeed(true);
+    await ensureProfile(); showApp(); await loadFeed(true);
   } catch (error) { showToast(error.message); }
 }
 
@@ -202,9 +197,7 @@ function showView(view, targetUserId = null) {
   if (view === "profile") {
     viewingProfileId = targetUserId || currentUser.id;
     loadProfileView(viewingProfileId);
-  } else {
-    viewingProfileId = null;
-  }
+  } else { viewingProfileId = null; }
   window.scrollTo(0, 0);
 }
 
@@ -222,77 +215,80 @@ $("#settings-theme-toggle").addEventListener("click", async () => {
   currentProfile.theme = next; applyTheme(next);
 });
 
-
 // ================= MARKDOWN & SANITIZE HTML =================
 
 function renderRichText(value) {
   if (!value) return "";
-  
-  // 1. Chống XSS (Mã hóa toàn bộ)
   let html = escapeHTML(value);
-
-  // 2. Khôi phục thẻ cơ bản do Editor tạo ra
   html = html.replace(/&lt;(\/?)(b|strong|i|em|u|br)&gt;/gi, "<$1$2>");
-
-  // 3. Xóa ký tự gạch chéo ngược thừa do lỗi bộ gõ/copy
-  html = html.replace(/\\/g, "");
-
-  // 4. Auto-link: Tự động nhận diện URL và gắn thẻ <a>
+  html = html.replace(/\\/g, ""); // Fix lỗi chéo ngược
+  
   const urlRegex = /(https?:\/\/[^\s<]+)/g;
   html = html.replace(urlRegex, '<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>');
 
-  // 5. Xử lý Markdown (H1, H2, H3, Blockquote, Danh sách)
   html = html.replace(/^(?:<br>)?### (.*)$/gm, '<h3>$1</h3>')
              .replace(/^(?:<br>)?## (.*)$/gm, '<h2>$1</h2>')
              .replace(/^(?:<br>)?# (.*)$/gm, '<h1>$1</h1>')
              .replace(/^(?:<br>)?&gt; (.*)$/gm, '<blockquote>$1</blockquote>')
              .replace(/^(?:<br>)?- (.*)$/gm, '• $1');
 
-  // 6. Xử lý Markdown In đậm & In nghiêng
+  html = html.replace(/\*\*\*(.*?)\*\*\*/g, '<b><i>$1</i></b>');
   html = html.replace(/\*\*(.*?)\*\*/g, '<b>$1</b>');
   html = html.replace(/\*(.*?)\*/g, '<i>$1</i>');
 
-  // 7. Chuyển dòng trống thành <br>
   return html.replace(/\n/g, "<br>");
 }
 
 function sanitizeEditorHTML(html) { 
-  const temp = document.createElement("div");
-  temp.innerHTML = html;
-  
-  // Loại bỏ hoàn toàn các thuộc tính như style, class, id,... để chống rác CSS từ Facebook/Word
+  const doc = new DOMParser().parseFromString(html, 'text/html');
   const allowedTags = ['B', 'I', 'U', 'BR', 'DIV', 'P'];
+  
   function clean(node) {
     Array.from(node.childNodes).forEach(child => {
       if (child.nodeType === 1) { 
         if (!allowedTags.includes(child.tagName)) {
-          child.replaceWith(document.createTextNode(child.textContent || ""));
+          const textNode = document.createTextNode(child.textContent || "");
+          child.replaceWith(textNode);
         } else {
-          Array.from(child.attributes).forEach(attr => child.removeAttribute(attr.name));
-          clean(child);
+          while (child.attributes.length > 0) child.removeAttribute(child.attributes[0].name);
+          clean(child); 
         }
-      } else if (child.nodeType !== 3) {
-        child.remove();
-      }
+      } else if (child.nodeType !== 3) { child.remove(); }
     });
   }
-  clean(temp);
+  clean(doc.body);
   
-  // Chuẩn hóa <div> và <p> thành <br>
-  let cleanHtml = temp.innerHTML;
+  let cleanHtml = doc.body.innerHTML;
+  cleanHtml = cleanHtml.replace(/<div><br><\/div>/gi, "<br>"); 
   cleanHtml = cleanHtml.replace(/<div>/gi, "<br>").replace(/<\/div>/gi, "");
   cleanHtml = cleanHtml.replace(/<p>/gi, "<br>").replace(/<\/p>/gi, "");
   
-  return cleanHtml; 
+  return cleanHtml.trim(); 
 }
 
-// BẮT SỰ KIỆN COPY/PASTE: Chỉ cho phép dán văn bản thô
+// BẮT SỰ KIỆN COPY/PASTE: Loại bỏ style rác
 $("#post-content").addEventListener("paste", (e) => {
   e.preventDefault();
   const text = (e.clipboardData || window.clipboardData).getData('text/plain');
   document.execCommand('insertText', false, text);
 });
 
+// THAO TÁC TOOLBAR MARKDOWN
+$$(".format-toolbar button").forEach(btn => {
+  btn.addEventListener("click", (e) => {
+    e.preventDefault();
+    $("#post-content").focus();
+
+    if (btn.dataset.format) document.execCommand(btn.dataset.format, false, null);
+    else if (btn.dataset.md) document.execCommand('insertText', false, btn.dataset.md);
+    else if (btn.dataset.mdWrap) {
+      const selection = window.getSelection();
+      const text = selection.toString();
+      const wrap = btn.dataset.mdWrap;
+      document.execCommand('insertText', false, wrap + text + wrap);
+    }
+  });
+});
 
 // ================= FEED & POSTS =================
 
@@ -363,10 +359,10 @@ async function renderPosts(posts, container) {
         ${REACTIONS.map(r => `<button data-reaction="${r.type}">${r.icon}</button>`).join("")}
       </div>
       <div class="post-menu-panel hidden">
-        ${isOwner ? `<button data-action="edit-post">Chỉnh sửa bài viết</button>` : ""}
+        ${isOwner ? `<button data-action="edit-post">Chỉnh sửa</button>` : ""}
         ${isOwner ? `<button data-action="toggle-comments">${post.comments_enabled ? "Tắt bình luận" : "Bật bình luận"}</button>` : ""}
         <button data-action="copy-link">Sao chép liên kết</button>
-        ${isOwner ? `<button data-action="delete-post" class="danger-text">Xóa bài viết</button>` : ""}
+        ${isOwner ? `<button data-action="delete-post" class="danger-text">Xóa</button>` : ""}
       </div>
     `;
     container.appendChild(card);
@@ -380,8 +376,18 @@ function openPostEditor(post = null) {
   editingPostId = post?.id || null;
   $("#post-modal-title").textContent = post ? "Chỉnh sửa bài viết" : "Tạo bài viết";
   $("#publish-post-btn").textContent = post ? "Lưu" : "Đăng";
+  
   if (post) {
-    $("#post-content").textContent = post.content || "";
+    let editContent = post.content || "";
+    // Xóa mã hóa HTML cũ nếu có
+    if (editContent.includes("&lt;")) {
+      const txt = document.createElement("textarea");
+      txt.innerHTML = editContent;
+      editContent = txt.value; 
+    }
+    // Dọn sạch mã cũ rồi mới đưa vào khung viết
+    $("#post-content").innerHTML = sanitizeEditorHTML(editContent);
+    
     $("#comments-enabled").checked = !!post.comments_enabled;
     selectedImages = (post.image_urls || []).map(url => ({ existing: true, url }));
     renderImagePreview();
@@ -395,9 +401,6 @@ function openPostEditor(post = null) {
 
 $("#new-post-btn").addEventListener("click", () => openPostEditor());
 $("#composer-launch").addEventListener("click", () => openPostEditor());
-$$("[data-format]").forEach(btn => btn.addEventListener("click", () => {
-  $("#post-content").focus(); document.execCommand(btn.dataset.format, false, null);
-}));
 
 $("#post-images").addEventListener("change", (e) => {
   for (const file of e.target.files) selectedImages.push({ file });
@@ -450,7 +453,7 @@ $("#publish-post-btn").addEventListener("click", async () => {
   setBusy($("#publish-post-btn"), false);
 });
 
-// ================= GLOBAL CLICK EVENTS (POST ACTIONS) =================
+// ================= GLOBAL CLICK EVENTS =================
 
 document.addEventListener("click", async (e) => {
   if (e.target.closest(".view-profile")) {
@@ -465,7 +468,6 @@ document.addEventListener("click", async (e) => {
   const postId = card ? card.dataset.postId : null;
   const action = actionBtn.dataset.action;
 
-  // Profile Specific Actions
   if (action === "share-profile") {
     navigator.clipboard.writeText(`${location.origin}${location.pathname}#profile-${actionBtn.dataset.profileId}`);
     showToast("Đã sao chép liên kết hồ sơ.");
@@ -479,10 +481,7 @@ document.addEventListener("click", async (e) => {
 
   if (!postId) return;
 
-  // Post Actions
-  if (action === "react") { 
-    card.querySelector(".reaction-picker").classList.toggle("hidden"); 
-  }
+  if (action === "react") { card.querySelector(".reaction-picker").classList.toggle("hidden"); }
   else if (actionBtn.dataset.reaction) {
     const type = actionBtn.dataset.reaction;
     const existing = await db.from("reactions").select("id,reaction_type").eq("post_id", postId).eq("user_id", currentUser.id).maybeSingle();
@@ -495,7 +494,7 @@ document.addEventListener("click", async (e) => {
   else if (action === "comments") await openComments(postId);
   else if (action === "share" || action === "copy-link") {
     navigator.clipboard.writeText(`${location.origin}${location.pathname}#post-${postId}`);
-    showToast("Đã sao chép liên kết bài viết.");
+    showToast("Đã sao chép liên kết.");
     if(action === "copy-link") card.querySelector(".post-menu-panel").classList.add("hidden");
   }
   else if (action === "post-menu") card.querySelector(".post-menu-panel")?.classList.toggle("hidden");
@@ -518,30 +517,25 @@ document.addEventListener("click", async (e) => {
   }
 });
 
-
-// ================= COMMENTS (CÂY BÌNH LUẬN) =================
+// ================= COMMENTS =================
 
 async function openComments(postId) {
   const { data: post } = await db.from("posts").select("id,comments_enabled").eq("id", postId).single();
-  currentCommentsPost = post;
-  replyingToCommentId = null;
+  currentCommentsPost = post; replyingToCommentId = null;
   $("#reply-indicator").classList.add("hidden");
   $("#comment-input").disabled = !post.comments_enabled;
   $("#comment-input").placeholder = post.comments_enabled ? "Viết bình luận..." : "Đã tắt bình luận";
-  await loadComments();
-  showModal("comments-modal");
+  await loadComments(); showModal("comments-modal");
 }
 
 async function loadComments() {
   if (!currentCommentsPost) return;
-  // Bảng comments cần có cột parent_id (nullable) để hỗ trợ bình luận cha/con
   const { data: comments } = await db.from("comments").select("*").eq("post_id", currentCommentsPost.id).order("created_at", { ascending: true });
   
   const ids = [...new Set((comments || []).map(c => c.author_id))];
   const { data: profilesData } = ids.length ? await db.from("profiles").select("id,display_name,avatar_url").in("id", ids) : { data: [] };
   const profiles = Object.fromEntries((profilesData || []).map(p => [p.id, p]));
 
-  // Lọc Comment Gốc (Không có parent_id) và Phản hồi (Có parent_id)
   const roots = (comments || []).filter(c => !c.parent_id);
   const replies = (comments || []).filter(c => c.parent_id);
 
@@ -573,7 +567,7 @@ function renderCommentRow(comment, profiles, isReply) {
           <button data-comment-action="menu">⋯</button>
         </div>
         <div class="comment-menu-panel hidden">
-          ${isMe ? `<button data-comment-action="edit">Chỉnh sửa</button><button data-comment-action="delete">Xóa</button>` : ""}
+          ${isMe ? `<button data-comment-action="edit">Sửa</button><button data-comment-action="delete">Xóa</button>` : ""}
           <button data-comment-action="copy">Sao chép</button>
         </div>
       </div>
@@ -581,9 +575,7 @@ function renderCommentRow(comment, profiles, isReply) {
 }
 
 $("#cancel-reply-btn").addEventListener("click", () => {
-  replyingToCommentId = null;
-  $("#reply-indicator").classList.add("hidden");
-  $("#comment-input").focus();
+  replyingToCommentId = null; $("#reply-indicator").classList.add("hidden"); $("#comment-input").focus();
 });
 
 $("#comment-form").addEventListener("submit", async (e) => {
@@ -596,15 +588,11 @@ $("#comment-form").addEventListener("submit", async (e) => {
   try {
     const payload = { post_id: currentCommentsPost.id, author_id: currentUser.id, content };
     if (replyingToCommentId) payload.parent_id = replyingToCommentId; 
-    
     await db.from("comments").insert(payload);
     
-    $("#comment-input").value = ""; 
-    replyingToCommentId = null; 
-    $("#reply-indicator").classList.add("hidden");
-    await loadComments(); 
-    await loadFeed(true);
-  } catch (error) { showToast("Lỗi gửi bình luận: " + error.message); }
+    $("#comment-input").value = ""; replyingToCommentId = null; $("#reply-indicator").classList.add("hidden");
+    await loadComments(); await loadFeed(true);
+  } catch (error) { showToast(error.message); }
   setBusy(e.submitter, false);
 });
 
@@ -615,12 +603,8 @@ $("#comments-list").addEventListener("click", async (e) => {
   const commentId = row.dataset.commentId;
   const action = btn.dataset.commentAction;
 
-  if (action === "menu") {
-    row.querySelector(".comment-menu-panel").classList.toggle("hidden");
-    return;
-  }
+  if (action === "menu") { row.querySelector(".comment-menu-panel").classList.toggle("hidden"); return; }
   if (action === "reply") {
-    // Trả lời: Nếu bình luận đang chọn là con, ta quy chiếu parent_id về bình luận gốc của nó
     const isReply = row.classList.contains('is-reply');
     replyingToCommentId = isReply ? row.dataset.parentId : commentId; 
     $("#reply-to-text").textContent = "Đang trả lời " + row.dataset.authorName;
@@ -629,34 +613,25 @@ $("#comments-list").addEventListener("click", async (e) => {
     return;
   }
   if (action === "copy") {
-    const text = row.querySelector("p").innerText;
-    navigator.clipboard.writeText(text);
+    navigator.clipboard.writeText(row.querySelector("p").innerText);
     showToast("Đã sao chép bình luận.");
     row.querySelector(".comment-menu-panel").classList.add("hidden");
     return;
   }
-  if (action === "react") {
-    showToast("Bạn đã bày tỏ cảm xúc với bình luận này.");
-    return;
-  }
+  if (action === "react") { showToast("Bạn đã bày tỏ cảm xúc với bình luận này."); return; }
 
   const { data: comment } = await db.from("comments").select("*").eq("id", commentId).single();
   if (action === "edit") {
-    const updated = await showCustomDialog("Chỉnh sửa bình luận", "Nhập nội dung mới:", true, comment.content);
+    const updated = await showCustomDialog("Sửa bình luận", "Nhập nội dung mới:", true, comment.content);
     if (updated && updated.trim()) {
       await db.from("comments").update({ content: updated.trim() }).eq("id", commentId);
       await loadComments();
     }
   } else if (action === "delete") {
     const ok = await showCustomDialog("Xóa bình luận", "Bạn chắc chắn muốn xóa?");
-    if (ok) { 
-      await db.from("comments").delete().eq("id", commentId); 
-      await loadComments(); 
-      await loadFeed(true); 
-    }
+    if (ok) { await db.from("comments").delete().eq("id", commentId); await loadComments(); await loadFeed(true); }
   }
 });
-
 
 // ================= PROFILE & SOCIAL LINKS =================
 
@@ -664,7 +639,6 @@ async function loadProfileView(userId) {
   try {
     const { data: profile } = await db.from("profiles").select("*").eq("id", userId).single();
     if (!profile) throw new Error("Hồ sơ không tồn tại.");
-
     const isMe = userId === currentUser.id;
     
     let coverHtml = profile.cover_url ? `<img class="cover-image" src="${escapeHTML(safeURL(profile.cover_url))}">` : `<div class="cover-image"></div>`;
@@ -685,7 +659,7 @@ async function loadProfileView(userId) {
       </div>
       <div class="profile-info" style="padding: 10px 24px 24px;">
         <h2 style="margin: 5px 0;">${escapeHTML(profile.display_name)}</h2>
-        <div class="profile-bio">${escapeHTML(profile.bio || "Chưa có tiểu sử.")}</div>
+        <div class="profile-bio">${escapeHTML(profile.bio || "")}</div>
         <div id="view-social-links" class="profile-links"></div>
       </div>
     `;
@@ -715,12 +689,9 @@ async function openProfileEditor() {
   if (coverURL(currentProfile)) {
     $("#edit-cover-preview").src = coverURL(currentProfile);
     $("#edit-cover-preview").style.display = "block";
-  } else {
-    $("#edit-cover-preview").style.display = "none";
-  }
+  } else { $("#edit-cover-preview").style.display = "none"; }
   
   selectedAvatarFile = null; selectedCoverFile = null;
-  
   const { data: links } = await db.from("social_links").select("*").eq("profile_id", currentUser.id);
   currentSocialLinks = links || [];
   renderSocialLinksEditor();
@@ -740,7 +711,6 @@ $("#cover-file").addEventListener("change", (e) => {
   $("#edit-cover-preview").style.display = "block";
 });
 
-// Chỉnh sửa mạng xã hội
 $("#toggle-social-editor").addEventListener("click", () => $("#social-links-editor").classList.toggle("hidden"));
 $("#new-social-platform").addEventListener("change", (e) => {
   $("#new-social-name").classList.toggle("hidden", e.target.value !== "khac");
@@ -782,8 +752,7 @@ $("#save-profile-btn").addEventListener("click", async () => {
       display_name: $("#edit-display-name").value.trim(),
       bio: $("#edit-bio").value.trim(), 
       theme: $("#edit-theme").value,
-      avatar_url, 
-      cover_url
+      avatar_url, cover_url
     }).eq("id", currentUser.id);
 
     await db.from("social_links").delete().eq("profile_id", currentUser.id);
@@ -794,11 +763,10 @@ $("#save-profile-btn").addEventListener("click", async () => {
     await ensureProfile(); setProfileImages(); applyTheme(currentProfile.theme);
     hideModal("profile-modal"); loadProfileView(currentUser.id);
     showToast("Đã cập nhật hồ sơ thành công.");
-  } catch (error) { showToast("Lỗi lưu hồ sơ: " + error.message); }
+  } catch (error) { showToast(error.message); }
   
   setBusy($("#save-profile-btn"), false);
 });
-
 
 // ================= KHỞI TẠO =================
 
